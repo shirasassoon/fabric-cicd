@@ -49,7 +49,6 @@ class FabricEndpoint:
                         "Content-Type": "application/json; charset=utf-8",
                     }
                     response = requests.request(method=method, url=url, headers=headers, json=body)
-
                 else:
                     headers = {"Authorization": f"Bearer {self.aad_token}"}
                     response = requests.request(method=method, url=url, headers=headers, files=files)
@@ -73,15 +72,18 @@ class FabricEndpoint:
                             exit_loop = True
                         elif status == "Failed":
                             response_error = response_json["error"]
-                            msg = f"Operation failed. Error Code: {response_error['errorCode']}. Error Message: {response_error['message']}"
+                            msg = (
+                                f"Operation failed. Error Code: {response_error['errorCode']}. "
+                                f"Error Message: {response_error['message']}"
+                            )
                             raise Exception(msg)
                         elif status == "Undefined":
                             msg = f"Operation is in an undefined state. Full Body: {response_json}"
                             raise Exception(msg)
                         else:
-                            retry_after = float(response.headers.get("Retry-After", 0.5))
-                            logger.info(f"Operation in progress. Checking again in {retry_after} seconds.")
-                            time.sleep(retry_after)
+                            self._handle_retry(
+                                response, invoke_log_message, attempt=iteration_count - 1, base_delay=0.5
+                            )
                     else:
                         time.sleep(1)
                         long_running = True
@@ -92,9 +94,7 @@ class FabricEndpoint:
 
                 # Handle API throttling
                 elif response.status_code == 429:
-                    retry_after = float(response.headers.get("Retry-After", 5)) + 5
-                    logger.info(f"API Overloaded: Retrying in {retry_after} seconds")
-                    time.sleep(retry_after)
+                    self._handle_retry(response, invoke_log_message, attempt=iteration_count - 1, base_delay=10)
 
                 # Handle expired authentication token
                 elif (
@@ -126,7 +126,10 @@ class FabricEndpoint:
                 elif response.status_code == 400 and "is not present in the environment." in response.json().get(
                     "message", "No message provided"
                 ):
-                    msg = f"Deployment attempted to remove a library that is not present in the environment. Description: {response.json().get('message')}"
+                    msg = (
+                        f"Deployment attempted to remove a library that is not present in the environment. "
+                        f"Description: {response.json().get('message')}"
+                    )
                     raise Exception(msg)
 
                 # Handle no environment libraries on GET request
@@ -134,7 +137,7 @@ class FabricEndpoint:
                     response.status_code == 404
                     and response.headers.get("x-ms-public-api-error-code") == "EnvironmentLibrariesNotFound"
                 ):
-                    logger.info("Live environment doesnt have any libraries, continuing")
+                    logger.info("Live environment doesn't have any libraries, continuing")
                     exit_loop = True
 
                 # Handle unsupported principal type
@@ -142,7 +145,7 @@ class FabricEndpoint:
                     response.status_code == 400
                     and response.headers.get("x-ms-public-api-error-code") == "PrincipalTypeNotSupported"
                 ):
-                    msg = f"The executing principal type is not supported to call {method} on '{url}'"
+                    msg = f"The executing principal type is not supported to call {method} on '{url}'."
                     raise Exception(msg)
 
                 # Handle unsupported item types
@@ -173,6 +176,27 @@ class FabricEndpoint:
             "body": (response.json() if "application/json" in response.headers.get("Content-Type") else {}),
             "status_code": response.status_code,
         }
+
+    def _handle_retry(self, response, invoke_log_message, attempt, base_delay, max_retries=5):
+        """
+        Handles retry logic with exponential backoff based on the response.
+
+        :param response: The HTTP response object.
+        :param invoke_log_message: Log message for the current invocation.
+        :param attempt: The current attempt number.
+        :param base_delay: Base delay in seconds for backoff.
+        :param max_retries: Maximum number of retry attempts.
+        :raises InvokeError: If maximum retries are exceeded.
+        """
+        if attempt < max_retries:
+            retry_after = float(response.headers.get("Retry-After", base_delay))
+            delay = min(retry_after, base_delay * (2**attempt))
+            logger.info(f"Retrying in {delay} seconds (Attempt {attempt + 1}/{max_retries})...")
+            time.sleep(delay)
+        else:
+            msg = f"Maximum retry attempts ({max_retries}) exceeded."
+            logger.debug(msg)
+            raise InvokeError(msg, logger, invoke_log_message)
 
     def _refresh_token(self):
         """Refreshes the AAD token if empty or expiration has passed"""
