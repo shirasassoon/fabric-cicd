@@ -1,5 +1,6 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
+
 import logging
 import os
 from pathlib import Path
@@ -16,6 +17,7 @@ Functions to process and deploy Environment item.
 logger = logging.getLogger(__name__)
 
 
+# TODO - binaries and compute.yml are read into files, but not actually needed since we only need the file
 def publish_environments(fabric_workspace_obj):
     """
     Publishes all environment items from the repository.
@@ -26,7 +28,9 @@ def publish_environments(fabric_workspace_obj):
     for item_name in fabric_workspace_obj.repository_items.get(item_type, {}):
         # Only deploy the shell for environments
         fabric_workspace_obj._publish_item(
-            item_name=item_name, item_type=item_type, full_publish=False, skip_publish_logging=True
+            item_name=item_name,
+            item_type=item_type,
+            skip_publish_logging=True,
         )
         _publish_environment_metadata(fabric_workspace_obj, item_name=item_name)
 
