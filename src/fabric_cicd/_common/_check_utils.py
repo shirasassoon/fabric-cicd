@@ -28,7 +28,7 @@ def parse_changelog(changelog_path: Path | None = None) -> dict[str, list[str]]:
             relative to the module.
     """
     if changelog_path is None:
-        changelog_path = Path(__file__).parent.parent.parent.parent / "docs" / "changelog.md"
+        changelog_path = Path(__file__).parent.parent / "changelog.md"
 
     if not changelog_path.exists():
         return {}
