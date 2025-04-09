@@ -18,6 +18,7 @@ from fabric_cicd._common._check_utils import check_regex
 from fabric_cicd._common._exceptions import ParameterFileError, ParsingError
 from fabric_cicd._common._fabric_endpoint import FabricEndpoint
 from fabric_cicd._common._item import Item
+from fabric_cicd._common._logging import print_header
 
 logger = logging.getLogger(__name__)
 
@@ -123,6 +124,8 @@ class FabricWorkspace:
     def _refresh_parameter_file(self) -> None:
         """Load parameters if file is present."""
         from fabric_cicd._parameter._parameter import Parameter
+
+        print_header("Validating Parameter File")
 
         # Initialize the parameter dict and Parameter object
         self.environment_parameter = {}
@@ -408,7 +411,6 @@ class FabricWorkspace:
             definition_body = {"definition": {"parts": item_payload}}
             combined_body = {**metadata_body, **definition_body}
 
-        print()
         logger.info(f"Publishing {item_type} '{item_name}'")
 
         is_deployed = bool(item_guid)
@@ -459,7 +461,7 @@ class FabricWorkspace:
 
         # skip_publish_logging provided in kwargs to suppress logging if further processing is to be done
         if not kwargs.get("skip_publish_logging", False):
-            logger.info("Published")
+            logger.info(f"{constants.INDENT}Published")
         return
 
     def _unpublish_item(self, item_name: str, item_type: str) -> None:
@@ -472,14 +474,13 @@ class FabricWorkspace:
         """
         item_guid = self.deployed_items[item_type][item_name].guid
 
-        print()
         logger.info(f"Unpublishing {item_type} '{item_name}'")
 
         # Delete the item from the workspace
         # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/delete-item
         try:
             self.endpoint.invoke(method="DELETE", url=f"{self.base_api_url}/items/{item_guid}")
-            logger.info("Unpublished")
+            logger.info(f"{constants.INDENT}Unpublished")
         except Exception as e:
             logger.warning(f"Failed to unpublish {item_type} '{item_name}'.  Raw exception: {e}")
 
@@ -587,6 +588,7 @@ class FabricWorkspace:
         """Publishes all folders from the repository."""
         # Sort folders by the number of '/' in their paths (ascending order)
         sorted_folders = sorted(self.repository_folders.keys(), key=lambda path: path.count("/"))
+        print_header("Publishing Workspace Folders")
         logger.info("Publishing Workspace Folders")
         for folder_path in sorted_folders:
             if folder_path in self.deployed_folders:
@@ -611,7 +613,7 @@ class FabricWorkspace:
             self.repository_folders[folder_path] = response["body"]["id"]
             logger.debug(f"Published folder: {folder_path}")
 
-        logger.info("Published")
+        logger.info(f"{constants.INDENT}Published")
 
     def _unpublish_folders(self) -> None:
         """Unublishes all empty folders in workspace."""
@@ -646,4 +648,4 @@ class FabricWorkspace:
                 except Exception as e:
                     logger.warning(f"Failed to unpublish folder {folder_id}.  Raw exception: {e}")
 
-        logger.info("Unpublished")
+        logger.info(f"{constants.INDENT}Unpublished")
