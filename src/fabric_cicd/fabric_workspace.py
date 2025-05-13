@@ -429,12 +429,11 @@ class FabricWorkspace:
             item_payload = []
             for file in item_files:
                 if not re.match(exclude_path, file.relative_path):
-                    if file.type == "text":
+                    if file.type == "text" and not str(file.file_path).endswith(".platform"):
                         file.contents = func_process_file(self, item, file) if func_process_file else file.contents
-                        if not str(file.file_path).endswith(".platform"):
-                            file.contents = self._replace_logical_ids(file.contents)
-                            file.contents = self._replace_parameters(file, item)
-                            file.contents = self._replace_workspace_ids(file.contents)
+                        file.contents = self._replace_logical_ids(file.contents)
+                        file.contents = self._replace_parameters(file, item)
+                        file.contents = self._replace_workspace_ids(file.contents)
 
                     item_payload.append(file.base64_payload)
 
@@ -586,7 +585,7 @@ class FabricWorkspace:
 
         # Now, for every folder, check if any of its subfolders is in platform_folders
         for folder in root_path.rglob("*"):
-            if not folder.is_dir() or folder == root_path:
+            if not folder.is_dir() or folder == root_path or folder.name == ".children":
                 continue
 
             # Skip folders that directly contain a .platform file
@@ -617,6 +616,10 @@ class FabricWorkspace:
             folder_name = folder_path.split("/")[-1]
             folder_parent_path = "/".join(folder_path.split("/")[:-1])
             folder_parent_id = self.repository_folders.get(folder_parent_path, None)
+
+            if re.search(constants.INVALID_FOLDER_CHAR_REGEX, folder_name):
+                msg = f"Folder name '{folder_name}' contains invalid characters."
+                raise InputError(msg, logger)
 
             request_body = {"displayName": folder_name}
             if folder_parent_id:
