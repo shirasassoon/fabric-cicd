@@ -89,6 +89,12 @@
     -   Notebooks attached to lakehouses always point to the original lakehouse unless parameterized in the `find_replace` section of the `parameter.yml` file.
 -   **Resources** are not source controlled and will not be deployed.
 
+## Real-Time Dashboard
+
+-   **Parameterization:**
+    -   Real-Time Dashboard attached to KQL databases always point to the original KQL database unless parameterized in the `find_replace` section of the `parameter.yml` file.
+-   The **cluster/query URI** of the KQL database(s) used in the dashboard must be present in the Real-Time Dashboard JSON for rebinding. If the Real-Time Dashboard is attached to a KQL database within the same workspace, the cluster URI value is empty and needs to be re-added. `fabric ci-cd` handles this automatically.
+
 ## Reports
 
 -   **Parameterization:**

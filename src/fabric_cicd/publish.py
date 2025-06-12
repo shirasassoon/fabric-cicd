@@ -108,6 +108,9 @@ def publish_all_items(fabric_workspace_obj: FabricWorkspace, item_name_exclude_r
     if "Eventstream" in fabric_workspace_obj.item_type_in_scope:
         print_header("Publishing Eventstreams")
         items.publish_eventstreams(fabric_workspace_obj)
+    if "KQLDashboard" in fabric_workspace_obj.item_type_in_scope:
+        print_header("Publishing KQLDashboard")
+        items.publish_kqldashboard(fabric_workspace_obj)
     if "Dataflow" in fabric_workspace_obj.item_type_in_scope:
         print_header("Publishing Dataflows")
         items.publish_dataflows(fabric_workspace_obj)
@@ -173,6 +176,7 @@ def unpublish_all_orphan_items(fabric_workspace_obj: FabricWorkspace, item_name_
         "Dataflow",
         "Eventstream",
         "Reflex",
+        "KQLDashboard",
         "KQLQueryset",
         "KQLDatabase",
         "Eventhouse",
