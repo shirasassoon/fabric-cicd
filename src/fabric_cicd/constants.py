@@ -31,6 +31,7 @@ ACCEPTED_ITEM_TYPES_UPN = (
     "SQLDatabase",
     "KQLDashboard",
     "Dataflow",
+    "GraphQLApi",
 )
 ACCEPTED_ITEM_TYPES_NON_UPN = ACCEPTED_ITEM_TYPES_UPN
 
@@ -44,6 +45,7 @@ MAX_RETRY_OVERRIDE = {
     "Warehouse": 10,
     "Dataflow": 10,
     "VariableLibrary": 7,
+    "GraphQLApi": 7,
 }
 SHELL_ONLY_PUBLISH = ["Environment", "Lakehouse", "Warehouse", "SQLDatabase"]
 
