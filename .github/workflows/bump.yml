@@ -62,19 +62,28 @@ jobs:
               run: |
                   set -e
                   PR_TITLE="${{ github.event.pull_request.title || needs.get-pr-details.outputs.pr_title }}"
-                  PR_HEAD_SHA="${{ github.event.pull_request.head.sha || needs.get-pr-details.outputs.pr_head_sha }}"
                   VERSION_REGEX='^v([0-9]+\.[0-9]+\.[0-9]+)$'
-                  BASE_REF="origin/main"
-                  CHANGED_FILES=$(git diff --name-only $BASE_REF...$PR_HEAD_SHA)
+
+                  # Determine which commit to analyze
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    COMMIT_SHA="${{ needs.get-pr-details.outputs.pr_head_sha }}"
+                    git fetch origin "$COMMIT_SHA"
+                  else
+                    # For pull_request events (post-merge)
+                    COMMIT_SHA="HEAD"
+                  fi
+
+                  # Compare the commit with its parent (the commit before it)
+                  CHANGED_FILES=$(git diff --name-only ${COMMIT_SHA}^1..$COMMIT_SHA)
 
                   VERSION_CHANGED=false
                   TITLE_IS_VERSION=false
                   OLD_VERSION=""
                   NEW_VERSION=""
-                  # Get VERSION from main branch
-                  OLD_VERSION=$(git show origin/main:src/fabric_cicd/constants.py | grep '^VERSION = ' | sed -E 's/VERSION = "([^"]+)"/\1/')
-                  # Get VERSION from current branch
-                  NEW_VERSION=$(grep '^VERSION = ' src/fabric_cicd/constants.py | sed -E 's/VERSION = "([^"]+)"/\1/')
+                  # Get VERSION from the parent commit (before the changes)
+                  OLD_VERSION=$(git show ${COMMIT_SHA}^1:src/fabric_cicd/constants.py | grep '^VERSION = ' | sed -E 's/VERSION = "([^"]+)"/\1/')
+                  # Get VERSION from the current commit
+                  NEW_VERSION=$(git show ${COMMIT_SHA}:src/fabric_cicd/constants.py | grep '^VERSION = ' | sed -E 's/VERSION = "([^"]+)"/\1/')
 
                   if [ "$OLD_VERSION" != "$NEW_VERSION" ]; then
                     VERSION_CHANGED=true
@@ -130,22 +139,25 @@ jobs:
             - name: Extract version
               id: version-check
               run: |
-                  # Extract version from constants.py
-                  if [ -f "src/fabric_cicd/constants.py" ]; then
-                    CONSTANTS_VERSION=$(grep -oP '(?<=^VERSION = ").*(?=")' src/fabric_cicd/constants.py)
-                    echo "Version in constants.py: $CONSTANTS_VERSION"
-                    
-                    if [ -z "$CONSTANTS_VERSION" ]; then
-                      echo "ERROR: Could not extract version from constants.py"
-                      exit 1
-                    fi
-                    
-                    echo "version_number=$CONSTANTS_VERSION" >> $GITHUB_OUTPUT
-                    echo "version_tag=v$CONSTANTS_VERSION" >> $GITHUB_OUTPUT
+                  # Determine which commit to get version from
+                  if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+                    COMMIT_SHA="${{ needs.get-pr-details.outputs.pr_head_sha }}"
+                    git fetch origin "$COMMIT_SHA"
+                    CONSTANTS_VERSION=$(git show ${COMMIT_SHA}:src/fabric_cicd/constants.py | grep -oP '(?<=^VERSION = ").*(?=")')
                   else
-                    echo "ERROR: constants.py file not found"
+                    # For pull_request events, use current working directory (HEAD)
+                    CONSTANTS_VERSION=$(grep -oP '(?<=^VERSION = ").*(?=")' src/fabric_cicd/constants.py)
+                  fi
+
+                  echo "Version: $CONSTANTS_VERSION"
+
+                  if [ -z "$CONSTANTS_VERSION" ]; then
+                    echo "ERROR: Could not extract version from constants.py"
                     exit 1
                   fi
+
+                  echo "version_number=$CONSTANTS_VERSION" >> $GITHUB_OUTPUT
+                  echo "version_tag=v$CONSTANTS_VERSION" >> $GITHUB_OUTPUT
 
                   # Log trigger type
                   if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
