@@ -24,6 +24,32 @@ C:/dev/workspace
     /parameter.yml
 ```
 
+Example of parameter.yml file content:
+
+```yaml
+find_replace:
+    - find_value: "your-dev-lakehouse-id"
+      replace_value:
+          PPE: "ppe-lakehouse-id"
+          PROD: "prod-lakehouse-id"
+
+key_value_replace:
+    - find_key: $.variables[?(@.name=="Environment")].value
+      replace_value:
+          PPE: "PPE"
+          PROD: "PROD"
+
+spark_pool:
+    - instance_pool_id: "your-dev-pool-instance-id"
+      replace_value:
+          PPE:
+              type: "Capacity"
+              name: "PPE-Pool-name"
+          PROD:
+              type: "Capacity"
+              name: "PROD-Pool-name"
+```
+
 Raise a [feature request](https://github.com/microsoft/fabric-cicd/issues/new?template=2-feature.yml) for additional parameterization capabilities.
 
 ## Parameter Inputs
