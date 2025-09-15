@@ -73,12 +73,12 @@ def extract_replace_value(workspace_obj: FabricWorkspace, replace_value: str, ge
         return replace_value
 
     # If $workspace variable, return the workspace ID value
-    if replace_value == "$workspace.id":
+    if replace_value.startswith("$workspace."):
         if get_dataflow_name:
-            msg = "Invalid replace_value variable format: '$workspace.id'. Expected format to get dataflow name: $items.type.name.attribute"
+            msg = "Invalid replace_value variable: '$workspace'. Expected format to get dataflow name: $items.type.name.attribute"
             raise InputError(msg, logger)
 
-        return workspace_obj.workspace_id
+        return _extract_workspace_id(workspace_obj, replace_value)
 
     # If $items variable, return the item attribute value if found
     if replace_value.startswith("$items."):
@@ -87,6 +87,34 @@ def extract_replace_value(workspace_obj: FabricWorkspace, replace_value: str, ge
     # Otherwise, raise an error for invalid variable syntax
     msg = f"Invalid replace_value variable format: '{replace_value}'. Expected format: $items.type.name.attribute or $workspace.id"
     raise InputError(msg, logger)
+
+
+def _extract_workspace_id(workspace_obj: FabricWorkspace, replace_value: str) -> str:
+    """Extracts the workspace ID from the $workspace variable to set as the replace_value."""
+    if replace_value == "$workspace.id":
+        return workspace_obj.workspace_id
+
+    try:
+        # Extract the workspace name from the variable
+        var_parts = replace_value.removeprefix("$workspace.").split(".")
+        if len(var_parts) != 1:
+            msg = f"Invalid $workspace variable syntax: {replace_value}. Expected format: $workspace.<name>"
+            raise ParsingError(msg, logger)
+
+        workspace_name = var_parts[0].strip()
+        logger.debug(f"Extracted workspace name: {workspace_name}")
+
+        # Resolve workspace ID from name
+        return workspace_obj._resolve_workspace_id(workspace_name)
+
+    except Exception as e:
+        # Re-raise exceptions
+        if isinstance(e, (ParsingError, InputError)):
+            raise e
+
+        # Otherwise, wrap it in a ParsingError
+        msg = f"Error parsing $workspace variable: {e}"
+        raise ParsingError(msg, logger) from e
 
 
 def _extract_item_attribute(workspace_obj: FabricWorkspace, variable: str, get_dataflow_name: bool) -> str:
