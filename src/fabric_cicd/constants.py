@@ -34,6 +34,7 @@ ACCEPTED_ITEM_TYPES = (
     "GraphQLApi",
     "ApacheAirflowJob",
     "MountedDataFactory",
+    "DataAgent",
     "OrgApp",
 )
 
