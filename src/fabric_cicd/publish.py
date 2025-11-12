@@ -205,6 +205,9 @@ def publish_all_items(
     if _should_publish_item_type("DataAgent"):
         print_header("Publishing Data Agents")
         items.publish_dataagents(fabric_workspace_obj)
+    if _should_publish_item_type("UserDataFunction"):
+        print_header("Publishing User Data Functions")
+        items.publish_userdatafunctions(fabric_workspace_obj)
     if _should_publish_item_type("Notebook"):
         print_header("Publishing Notebooks")
         items.publish_notebooks(fabric_workspace_obj)
@@ -368,6 +371,7 @@ def unpublish_all_orphan_items(
         "SemanticModel",
         "Eventhouse",
         "Notebook",
+        "UserDataFunction",
         "Environment",
         "MirroredDatabase",
         "SQLDatabase",
