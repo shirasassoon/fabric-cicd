@@ -27,39 +27,91 @@ logger = logging.getLogger(__name__)
 """Functions to extract parameter values"""
 
 
-def extract_find_value(param_dict: dict, file_content: str, filter_match: bool) -> str:
+def _validate_regex_structure(pattern: re.Pattern, find_value: str) -> None:
+    """
+    Validates regex pattern structure to ensure it has exactly one capturing group.
+    This validation is performed independently of whether the pattern matches any content.
+
+    Args:
+        pattern: Compiled regex pattern
+        find_value: The regex pattern string for error messages
+
+    Raises:
+        InputError: If the regex doesn't have exactly one capturing group
+    """
+    # Check the number of capturing groups in the pattern
+    if pattern.groups != 1:
+        msg = f"Regex pattern '{find_value}' must contain exactly one capturing group."
+        raise InputError(msg, logger)
+
+
+def _validate_regex_pattern(matches: list, find_value: str) -> None:
+    """
+    Validates regex pattern matches to ensure the captured value is not empty.
+
+    Args:
+        matches: List of regex match objects
+        find_value: The regex pattern string for error messages
+
+    Raises:
+        InputError: If validation fails
+    """
+    if matches:
+        # Check if the captured group is empty (which would be invalid)
+        captured_value = matches[0].group(1)
+        if not captured_value:
+            msg = f"Regex pattern '{find_value}' captured an empty value."
+            raise InputError(msg, logger)
+
+
+def extract_find_value(param_dict: dict, file_content: str, filter_match: bool) -> dict:
     """
     Extracts the find_value and sets the value. Processes the find_value if a valid regex is provided.
+    Returns replacement information for use with re.sub() or string replace().
 
     Args:
         param_dict: The parameter dictionary containing the find_value and is_regex keys.
         file_content: The content of the file where the find_value will be searched.
         filter_match: A boolean to check for a regex match in filtered files only.
+
+    Returns:
+        Dictionary with keys:
+        - 'pattern': The find pattern (original string or regex pattern)
+        - 'is_regex': Whether this is a regex pattern
+        - 'has_matches': Whether any matches were found
     """
     find_value = param_dict.get("find_value")
     is_regex = param_dict.get("is_regex", "").lower() == "true"
 
-    # Only process regex if enabled and file meets filter criteria
-    if is_regex and filter_match:
-        # Search for a match with the valid regex (validated in the parameter file validation step)
-        regex = re.compile(find_value)
-        match = re.search(regex, file_content)
-        if match:
-            if len(match.groups()) != 1:
-                msg = f"Regex pattern '{find_value}' must contain exactly one capturing group."
-                raise InputError(msg, logger)
+    # No find value -> nothing to do
+    if not find_value:
+        return {"pattern": "", "is_regex": False, "has_matches": False}
 
-            matched_value = match.group(1)
-            if matched_value:
-                return matched_value
+    # Regex find_value
+    if is_regex:
+        try:
+            compiled = re.compile(find_value)
+        except re.error as re_err:
+            msg = f"Invalid regex '{find_value}': {re_err}"
+            raise InputError(msg, logger) from re_err
 
-            msg = f"Regex pattern '{find_value}' captured an empty value."
-            raise InputError(msg, logger)
+        # Validate structure (to catch bad patterns early)
+        _validate_regex_structure(compiled, find_value)
 
-        logger.debug(f"No match found for regex '{find_value}' in the file content.")
+        # If file excluded by filters, do not search — return no-match but keep validation
+        if not filter_match:
+            return {"pattern": find_value, "is_regex": True, "has_matches": False}
 
-    # For non-regex or non-matching filters, return the original value
-    return find_value
+        matches = list(re.finditer(compiled, file_content))
+        _validate_regex_pattern(matches, find_value)
+
+        return {"pattern": find_value, "is_regex": True, "has_matches": bool(matches)}
+
+    # Non-regex find_value
+    if not filter_match:
+        return {"pattern": find_value, "is_regex": False, "has_matches": False}
+
+    return {"pattern": find_value, "is_regex": False, "has_matches": find_value in file_content}
 
 
 def extract_replace_value(workspace_obj: FabricWorkspace, replace_value: str, get_dataflow_name: bool = False) -> str:
