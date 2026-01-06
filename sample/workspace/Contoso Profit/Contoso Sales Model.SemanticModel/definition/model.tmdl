@@ -1,0 +1,23 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: en-US
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation PBI_QueryOrder = ["DirectLake - contosolakehouse"]
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_ProTooling = ["DirectLakeOnOneLakeInWeb","WebModelingEdit"]
+
+ref table dimension_stock_item
+ref table dimension_city
+ref table dimension_employee
+ref table fact_sale
+ref table dimension_date
+ref table aggregate_sale_by_date_employee
+ref table aggregate_sale_by_date_city
+ref table dimension_customer
+

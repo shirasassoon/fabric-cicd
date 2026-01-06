@@ -1,0 +1,154 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.5.0/schema.json",
+  "name": "0cb0ee4fda697cd51800",
+  "position": {
+    "x": 416.10223642172525,
+    "y": 48.051118210862619,
+    "z": 3,
+    "height": 232.07667731629391,
+    "width": 846.517571884984,
+    "tabOrder": 3
+  },
+  "visual": {
+    "visualType": "stackedAreaChart",
+    "query": {
+      "queryState": {
+        "Category": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "dimension_date"
+                    }
+                  },
+                  "Property": "FiscalMonthNumber"
+                }
+              },
+              "queryRef": "dimension_date.FiscalMonthNumber",
+              "nativeQueryRef": "FiscalMonthNumber",
+              "active": true
+            }
+          ]
+        },
+        "Series": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "dimension_stock_item"
+                    }
+                  },
+                  "Property": "BuyingPackage"
+                }
+              },
+              "queryRef": "dimension_stock_item.BuyingPackage",
+              "nativeQueryRef": "BuyingPackage"
+            }
+          ]
+        },
+        "Y": {
+          "projections": [
+            {
+              "field": {
+                "Aggregation": {
+                  "Expression": {
+                    "Column": {
+                      "Expression": {
+                        "SourceRef": {
+                          "Entity": "fact_sale"
+                        }
+                      },
+                      "Property": "Profit"
+                    }
+                  },
+                  "Function": 0
+                }
+              },
+              "queryRef": "Sum(fact_sale.Profit)",
+              "nativeQueryRef": "Sum of Profit"
+            }
+          ]
+        }
+      },
+      "sortDefinition": {
+        "sort": [
+          {
+            "field": {
+              "Aggregation": {
+                "Expression": {
+                  "Column": {
+                    "Expression": {
+                      "SourceRef": {
+                        "Entity": "fact_sale"
+                      }
+                    },
+                    "Property": "Profit"
+                  }
+                },
+                "Function": 0
+              }
+            },
+            "direction": "Descending"
+          }
+        ],
+        "isDefaultSort": true
+      }
+    },
+    "drillFilterOtherVisuals": true
+  },
+  "filterConfig": {
+    "filters": [
+      {
+        "name": "8845c252bdf53396ab79",
+        "field": {
+          "Aggregation": {
+            "Expression": {
+              "Column": {
+                "Expression": {
+                  "SourceRef": {
+                    "Entity": "fact_sale"
+                  }
+                },
+                "Property": "Profit"
+              }
+            },
+            "Function": 0
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "e79d4533969a21513f17",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "dimension_date"
+              }
+            },
+            "Property": "FiscalMonthNumber"
+          }
+        },
+        "type": "Advanced"
+      },
+      {
+        "name": "4eb21909fe1b6a0f217b",
+        "field": {
+          "Column": {
+            "Expression": {
+              "SourceRef": {
+                "Entity": "dimension_stock_item"
+              }
+            },
+            "Property": "BuyingPackage"
+          }
+        },
+        "type": "Categorical"
+      }
+    ]
+  }
+}

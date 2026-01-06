@@ -1,0 +1,119 @@
+table aggregate_sale_by_date_employee
+	lineageTag: 12501849-0d84-4f11-84b7-79d45e8ca85e
+	sourceLineageTag: [dbo].[aggregate_sale_by_date_employee]
+
+	column Date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: df733261-a9c6-4bdf-92a7-92142c4f38de
+		sourceLineageTag: Date
+		summarizeBy: none
+		sourceColumn: Date
+
+		annotation SummarizationSetBy = Automatic
+
+	column CalendarMonthLabel
+		dataType: string
+		lineageTag: ee946ee5-8ce2-4e40-a391-83eb56284cc4
+		sourceLineageTag: CalendarMonthLabel
+		summarizeBy: none
+		sourceColumn: CalendarMonthLabel
+
+		annotation SummarizationSetBy = Automatic
+
+	column Day
+		dataType: string
+		lineageTag: 0bbc7650-3d75-42fa-9f34-7ed94d0bab21
+		sourceLineageTag: Day
+		summarizeBy: none
+		sourceColumn: Day
+
+		annotation SummarizationSetBy = Automatic
+
+	column ShortMonth
+		dataType: string
+		lineageTag: ff927df9-eabe-4915-8567-3ea7f1302ade
+		sourceLineageTag: ShortMonth
+		summarizeBy: none
+		sourceColumn: ShortMonth
+
+		annotation SummarizationSetBy = Automatic
+
+	column CalendarYear
+		dataType: int64
+		formatString: 0
+		lineageTag: f10c3aa5-c3c0-434e-9f5d-d405ff20ca20
+		sourceLineageTag: CalendarYear
+		summarizeBy: sum
+		sourceColumn: CalendarYear
+
+		annotation SummarizationSetBy = Automatic
+
+	column PreferredName
+		dataType: string
+		lineageTag: 46edac9e-321c-40b9-b5f9-cc339d4c17ae
+		sourceLineageTag: PreferredName
+		summarizeBy: none
+		sourceColumn: PreferredName
+
+		annotation SummarizationSetBy = Automatic
+
+	column Employee
+		dataType: string
+		lineageTag: 3bf50b07-0be7-4d8c-a0cb-e44e6f5695af
+		sourceLineageTag: Employee
+		summarizeBy: none
+		sourceColumn: Employee
+
+		annotation SummarizationSetBy = Automatic
+
+	column SumOfTotalExcludingTax
+		dataType: double
+		lineageTag: db6c4548-e022-44a2-bf45-2c8cef804339
+		sourceLineageTag: SumOfTotalExcludingTax
+		summarizeBy: sum
+		sourceColumn: SumOfTotalExcludingTax
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column SumOfTaxAmount
+		dataType: double
+		lineageTag: 63a46fe3-e40a-425f-995b-8827e0d1a54f
+		sourceLineageTag: SumOfTaxAmount
+		summarizeBy: sum
+		sourceColumn: SumOfTaxAmount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column SumOfTotalIncludingTax
+		dataType: double
+		lineageTag: 6e8f76e8-23a2-4ee5-ab31-14fa038c6bf6
+		sourceLineageTag: SumOfTotalIncludingTax
+		summarizeBy: sum
+		sourceColumn: SumOfTotalIncludingTax
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column SumOfProfit
+		dataType: double
+		lineageTag: 5b96edec-cdc6-482f-9390-35a08fdbe129
+		sourceLineageTag: SumOfProfit
+		summarizeBy: sum
+		sourceColumn: SumOfProfit
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition aggregate_sale_by_date_employee = entity
+		mode: directLake
+		source
+			entityName: aggregate_sale_by_date_employee
+			expressionSource: 'DirectLake - contosolakehouse'
+

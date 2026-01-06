@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Contoso Customer Purchases Report"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "663a1369-c2fa-8459-4d99-1a5a30eb522a"
+  }
+}

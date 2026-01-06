@@ -16,7 +16,7 @@ root_directory = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(root_directory / "src"))
 
 # Uncomment to enable debug
-# change_log_level()
+change_log_level()
 
 # In this example, the parameter.yml file sits within the root/sample/workspace directory
 repository_directory = str(root_directory / "sample" / "workspace")
@@ -25,7 +25,7 @@ repository_directory = str(root_directory / "sample" / "workspace")
 item_type_in_scope = ["DataPipeline", "Notebook", "Environment", "SemanticModel", "Report"]
 
 # Set target environment
-environment = "PPE"
+environment = "prod"
 
 # Uncomment to use a parameter file in a different location (default location is within repository directory)
 # Use absolute path
@@ -35,7 +35,7 @@ environment = "PPE"
 
 validate_parameter_file(
     repository_directory=repository_directory,
-    item_type_in_scope=item_type_in_scope,
+    # item_type_in_scope=item_type_in_scope,
     # Comment to exclude target environment in validation
     environment=environment,
     # Uncomment to use a different parameter file name within the repository directory (default name: parameter.yml)

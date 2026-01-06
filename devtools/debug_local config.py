@@ -28,7 +28,7 @@ config_file = str(root_directory / "sample" / "workspace" / "config.yml")
 deploy_with_config(
     config_file_path=config_file,
     # Comment out if environment is not needed
-    environment="dev",
+    environment="prod",
     # Uncomment to use SPN auth
     # token_credential=token_credential,
     # Uncomment to override specific config values (pass in a dictionary of override values)

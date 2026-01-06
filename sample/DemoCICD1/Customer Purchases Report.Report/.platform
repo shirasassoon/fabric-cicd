@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Customer Purchases Report"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "ac1a90b5-758b-b814-4a73-8b1500e216d4"
+  }
+}

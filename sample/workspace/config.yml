@@ -1,54 +1,49 @@
-# Sample configuration file for fabric-cicd deployment
-# This file demonstrates the YAML configuration structure for simplified deployment workflow
+core:
+    workspace:
+        dev: "fabricCICD_DevWS"
+        prod: "fabricCICD_DeploymentWS"
 
-core: # Core configurations
-  # Either workspace or workspace_id must be provided
-  workspace: # Workspace names by environment
-    dev: Fabric-Dev-Engineering
-    test: Fabric-Test-Engineering
-    prod: Fabric-Prod-Engineering
+    workspace_id:
+        dev: "7d3cbf1d-affe-4286-aaa5-32e7e45107d7"
+        prod: "5b39f77a-e111-429b-aa2b-d5ea3d67cd28"
 
-  workspace_id: # Workspace IDs by environment (takes precedence over workspace if both are provided)
-    dev: 8b6e2c7a-4c1f-4e3a-9b2e-7d8f2e1a6c3b
-    test: 2f4b9e8d-1a7c-4d3e-b8e2-5c9f7a2d4e1b
-    prod: 7c3e1f8b-2d4a-4b9e-8f2c-1a6c3b7d8e2f
+    repository_directory: "." # relative path
 
-  repository_directory: "."  # Path to workspace items directory (relative to config.yml location) (required)
+    #item_types_in_scope:
+    #    - Notebook
+    #    - DataPipeline
+    #    - Environment
+    #    - Lakehouse
 
-  item_types_in_scope:  # Item types to include in deployment (optional)
-    - VariableLibrary
-    - Dataflow
-    - DataPipeline
-    - Notebook
-    - Environment
+    parameter: "parameter.yml" # relative path
 
-  parameter: "parameter.yml" # Path to parameter file (relative to config.yml location) (optional)
+publish:
+    # Don't publish items matching this pattern
+    #exclude_regex: "^DONT_DEPLOY.*"
 
-publish: # Publish configuration (optional)
-  exclude_regex: "^DONT_DEPLOY.*"  # Regex pattern to exclude items from publishing
+    #folder_exclude_regex: "^DONT_DEPLOY_FOLDER/"
 
-  # folder_exclude_regex: "^DONT_DEPLOY_FOLDER/"  # Regex pattern to exclude folder with items from publishing (requires feature flags)
+    #items_to_include:
+    #    - "Hello World.Notebook"
+    #    - "Run Hello World.DataPipeline"
 
-  # items_to_include:  # Optional list of specific items to publish (requires feature flags)
-  #   - "Hello World.Notebook"
-  #   - "Run Hello World.DataPipeline"
+    skip:
+        dev: true
+        prod: false
 
-  skip:  # Skip publishing for specific environments
-    dev: true   # Skip publishing in dev environment
-    test: false # Enable publishing in test environment
-    prod: false # Enable publishing in prod environment
+unpublish:
+    # Don't unpublish items matching this pattern
+    exclude_regex: "^DEBUG.*"
 
-unpublish: # Unpublish configuration (optional)
-  exclude_regex: "^DEBUG.*"  # Regex pattern to exclude items from unpublishing
-  # items_to_include:  # Optional list of specific items to unpublish (requires feature flags)
+    skip:
+        dev: true
+        prod: false
 
-  skip:  # Skip unpublishing for specific environments
-    dev: true   # Skip unpublishing in dev environment
-    test: false # Enable unpublishing in test environment
-    prod: false # Enable unpublishing in prod environment
+features:
+    - enable_shortcut_publish
+    - continue_on_shortcut_failure
+    #- enable_experimental_features
+    #- enable_items_to_include
 
-features:  # Feature flags to enable (optional)
-  - enable_shortcut_publish
-
-constants:  # Global constants to override (optional)
-  DEFAULT_API_ROOT_URL: "https://msitapi.fabric.microsoft.com"
+constants:
+    DEFAULT_API_ROOT_URL: "https://api.fabric.microsoft.com"

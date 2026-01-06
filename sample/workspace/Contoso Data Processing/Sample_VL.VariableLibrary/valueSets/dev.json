@@ -1,0 +1,14 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/variableLibrary/definition/valueSet/1.0.0/schema.json",
+  "name": "dev",
+  "variableOverrides": [
+    {
+      "name": "environment",
+      "value": "dev"
+    },
+    {
+      "name": "workspace_id",
+      "value": "7d3cbf1d-affe-4286-aaa5-32e7e45107d7"
+    }
+  ]
+}

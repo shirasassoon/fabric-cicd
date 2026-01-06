@@ -1,0 +1,34 @@
+{
+  "formatVersion": "202502",
+  "computeEngineSettings": {
+    "allowModernEvaluationEngine": true
+  },
+  "name": "Customer Dimension Data",
+  "queryGroups": [],
+  "documentLocale": "en-US",
+  "queriesMetadata": {
+    "dimension_customer 2": {
+      "queryId": "3d557e0f-5053-41ef-a0b5-53d49904db52",
+      "queryName": "dimension_customer 2",
+      "loadEnabled": false
+    },
+    "dimension_customer 2_DataDestination": {
+      "queryId": "7560c591-5ab5-444d-8111-6bcb1737d7f2",
+      "queryName": "dimension_customer 2_DataDestination",
+      "isHidden": true,
+      "loadEnabled": false
+    }
+  },
+  "connections": [
+    {
+      "path": "https://microsoft-my.sharepoint.com/personal/shirasassoon_microsoft_com/",
+      "kind": "Web",
+      "connectionId": "{\"ClusterId\":\"f92b0d60-6145-4224-8ca1-45c117a6d302\",\"DatasourceId\":\"e93ab470-ff44-4312-863c-7b09c056a62a\"}"
+    },
+    {
+      "path": "Lakehouse",
+      "kind": "Lakehouse",
+      "connectionId": "{\"ClusterId\":\"f92b0d60-6145-4224-8ca1-45c117a6d302\",\"DatasourceId\":\"deb74d62-7d27-4da9-ab64-519b784867c3\"}"
+    }
+  ]
+}
