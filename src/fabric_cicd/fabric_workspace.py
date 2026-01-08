@@ -12,12 +12,11 @@ from typing import Optional
 
 import dpath
 from azure.core.credentials import TokenCredential
-from azure.identity import DefaultAzureCredential
 
 from fabric_cicd import constants
 from fabric_cicd._common._check_utils import check_regex, check_valid_json_content, check_valid_yaml_content
 from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError, ParameterFileError, ParsingError
-from fabric_cicd._common._fabric_endpoint import FabricEndpoint
+from fabric_cicd._common._fabric_endpoint import FabricEndpoint, _generate_fabric_credential, _is_fabric_runtime
 from fabric_cicd._common._item import Item
 from fabric_cicd._common._logging import print_header
 
@@ -99,14 +98,19 @@ class FabricWorkspace:
             validate_workspace_name,
         )
 
+        if token_credential is None:
+            if _is_fabric_runtime():
+                token_credential = _generate_fabric_credential()
+            else:
+                # if credential is not defined, use DefaultAzureCredential
+                from azure.identity import DefaultAzureCredential
+
+                token_credential = DefaultAzureCredential()
+        else:
+            token_credential = validate_token_credential(token_credential)
+
         # Initialize endpoint
-        self.endpoint = FabricEndpoint(
-            # if credential is not defined, use DefaultAzureCredential
-            token_credential=(
-                # CodeQL [SM05139] Public library needing to have a default auth when user doesn't provide token. Not internal Azure product.
-                DefaultAzureCredential() if token_credential is None else validate_token_credential(token_credential)
-            )
-        )
+        self.endpoint = FabricEndpoint(token_credential=token_credential)
 
         # Set workspace_id class variable
         if workspace_id:
