@@ -42,6 +42,7 @@ fabric-cicd includes several debug scripts in the `devtools/` directory that all
 - `debug_local.py` or `debug_local config.py` - Test full deployment workflows
 - `debug_parameterization.py` - Validate parameter files without deploying
 - `debug_api.py` - Test Fabric REST API calls directly
+- `debug_trace_deployment.py` - Perform and end-to-end deployment against a Fabric Workspace and capture HTTP Traces to be used for Integration Tests
 
 **Tip:** Using these scripts locally can catch configuration errors early, saving time in your CI/CD pipeline.
 
@@ -293,6 +294,17 @@ See [parameterization](parameterization.md#parameter-file-validation) for more i
 2. Configure the API endpoint, method, body (if any)
 3. Uncomment `change_log_level()` to view API request/response details
 4. Run: `uv run python devtools/debug_api.py`
+
+#### debug_trace_deployment.py
+
+**Purpose**: Debug the public APIs called in `publish_all_items()` workflow with breakpoints using VS Code's debugger.
+
+**Quick Start**:
+
+1. Open `devtools/debug_trace_deployment.py`
+2. Set breakpoint(s) in the code - e.g. prior to `publish_all_items`
+3. Update `.vscode/launch.json` with your workspace ID in `FABRIC_WORKSPACE_ID`
+4. Press **F5** → Select "Debug: Publish All Items"
 
 ## Getting Help
 
