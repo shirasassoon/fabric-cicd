@@ -129,6 +129,7 @@ class FabricWorkspace:
         self.environment = validate_environment(environment)
         self.publish_item_name_exclude_regex = None
         self.publish_folder_path_exclude_regex = None
+        self.publish_folder_path_to_include = None
         self.shortcut_exclude_regex = None
         self.items_to_include = None
         self.responses = None
@@ -591,15 +592,29 @@ class FabricWorkspace:
                 logger.info(f"Skipping publishing of {item_type} '{item_name}' due to exclusion regex.")
                 return
 
-        # Skip publishing if the item's folder path is excluded by the regex
-        if self.publish_folder_path_exclude_regex:
-            regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
+        # Skip publishing if the folder path is excluded by the regex or not in the include list
+        if self.publish_folder_path_exclude_regex or self.publish_folder_path_to_include:
             relative_path = item.path.relative_to(Path(self.repository_directory))
-            relative_path_str = relative_path.as_posix()
-            if regex_pattern.search(relative_path_str):
-                item.skip_publish = True
-                logger.info(f"Skipping publishing of {item_type} '{item_name}' due to folder path exclusion regex.")
-                return
+            # Build the folder path in the same format as repository_folders keys (/folder_name)
+            relative_parts = relative_path.as_posix().split("/")
+            # Remove the last part (item folder name) to get the parent folder path
+            folder_path = "/" + "/".join(relative_parts[:-1]) if len(relative_parts) > 1 else ""
+            if folder_path:
+                if self.publish_folder_path_exclude_regex:
+                    regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
+                    if regex_pattern.search(folder_path):
+                        item.skip_publish = True
+                        logger.info(
+                            f"Skipping publishing of {item_type} '{item_name}' due to folder path exclusion regex."
+                        )
+                        return
+
+                if self.publish_folder_path_to_include and folder_path not in self.publish_folder_path_to_include:
+                    item.skip_publish = True
+                    logger.info(
+                        f"Skipping publishing of {item_type} '{item_name}' under {folder_path} as it is not in the include list."
+                    )
+                    return
 
         # Skip publishing if the item is not in the include list
         if self.items_to_include:
@@ -830,6 +845,16 @@ class FabricWorkspace:
         print_header("Publishing Workspace Folders")
         logger.info("Publishing Workspace Folders")
         for folder_path in sorted_folders:
+            # Skip folders not in the include list
+            if self.publish_folder_path_to_include and folder_path not in self.publish_folder_path_to_include:
+                logger.info(f"Skipping publishing of folder '{folder_path}' as it is not in the include list.")
+                continue
+            # Skip folders matching the exclusion regex
+            if self.publish_folder_path_exclude_regex:
+                regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
+                if regex_pattern.search(folder_path):
+                    logger.info(f"Skipping publishing of folder '{folder_path}' due to folder path exclusion regex.")
+                    continue
             if folder_path in self.deployed_folders:
                 # Folder already deployed, update local hierarchy
                 self.repository_folders[folder_path] = self.deployed_folders[folder_path]

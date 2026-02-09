@@ -24,6 +24,7 @@ from fabric_cicd._common._validate_input import (
     validate_environment,
     validate_fabric_workspace_obj,
     validate_folder_path_exclude_regex,
+    validate_folder_path_to_include,
     validate_items_to_include,
     validate_shortcut_exclude_regex,
 )
@@ -37,6 +38,7 @@ def publish_all_items(
     fabric_workspace_obj: FabricWorkspace,
     item_name_exclude_regex: Optional[str] = None,
     folder_path_exclude_regex: Optional[str] = None,
+    folder_path_to_include: Optional[list[str]] = None,
     items_to_include: Optional[list[str]] = None,
     shortcut_exclude_regex: Optional[str] = None,
 ) -> Optional[dict]:
@@ -47,6 +49,7 @@ def publish_all_items(
         fabric_workspace_obj: The FabricWorkspace object containing the items to be published.
         item_name_exclude_regex: Regex pattern to exclude specific items from being published.
         folder_path_exclude_regex: Regex pattern to exclude items based on their folder path.
+        folder_path_to_include: List of folder paths (with items) that should be published.
         items_to_include: List of items in the format "item_name.item_type" that should be published.
         shortcut_exclude_regex: Regex pattern to exclude specific shortcuts from being published in lakehouses.
 
@@ -54,6 +57,11 @@ def publish_all_items(
         Dict containing all API responses if the "enable_response_collection" feature flag is enabled and responses were collected, otherwise None.
 
     folder_path_exclude_regex:
+        This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
+        not recommended due to item dependencies. To enable this feature, see How To -> Optional Features
+        for information on which flags to enable.
+
+    folder_path_to_include:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
         not recommended due to item dependencies. To enable this feature, see How To -> Optional Features
         for information on which flags to enable.
@@ -99,6 +107,18 @@ def publish_all_items(
         ... )
         >>> folder_exclude_regex = "^legacy/"
         >>> publish_all_items(workspace, folder_path_exclude_regex=folder_exclude_regex)
+
+        With folder inclusion
+        >>> from fabric_cicd import FabricWorkspace, publish_all_items, append_feature_flag
+        >>> append_feature_flag("enable_experimental_features")
+        >>> append_feature_flag("enable_include_folder")
+        >>> workspace = FabricWorkspace(
+        ...     workspace_id="your-workspace-id",
+        ...     repository_directory="/path/to/repo",
+        ...     item_type_in_scope=["Environment", "Notebook", "DataPipeline"]
+        ... )
+        >>> folder_path_to_include = ["/subfolder"]
+        >>> publish_all_items(workspace, folder_path_to_include=folder_path_to_include)
 
         With items to include
         >>> from fabric_cicd import FabricWorkspace, publish_all_items, append_feature_flag
@@ -161,6 +181,14 @@ def publish_all_items(
         raise FailedPublishedItemStatusError(msg, logger)
 
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:
+        if folder_path_exclude_regex:
+            validate_folder_path_exclude_regex(folder_path_exclude_regex)
+            fabric_workspace_obj.publish_folder_path_exclude_regex = folder_path_exclude_regex
+
+        if folder_path_to_include:
+            validate_folder_path_to_include(folder_path_to_include)
+            fabric_workspace_obj.publish_folder_path_to_include = folder_path_to_include
+
         fabric_workspace_obj._refresh_deployed_folders()
         fabric_workspace_obj._refresh_repository_folders()
         fabric_workspace_obj._publish_folders()
@@ -173,10 +201,6 @@ def publish_all_items(
             "Using item_name_exclude_regex is risky as it can prevent needed dependencies from being deployed.  Use at your own risk."
         )
         fabric_workspace_obj.publish_item_name_exclude_regex = item_name_exclude_regex
-
-    if folder_path_exclude_regex:
-        validate_folder_path_exclude_regex(folder_path_exclude_regex)
-        fabric_workspace_obj.publish_folder_path_exclude_regex = folder_path_exclude_regex
 
     if items_to_include:
         validate_items_to_include(items_to_include, operation=constants.OperationType.PUBLISH)

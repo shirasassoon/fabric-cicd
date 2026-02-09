@@ -177,8 +177,6 @@ def validate_experimental_param(
     Raises:
         InputError: If required feature flags are not enabled.
     """
-    from fabric_cicd.constants import FeatureFlag
-
     if param_value is None:
         return
 
@@ -204,8 +202,6 @@ def validate_items_to_include(items_to_include: Optional[list[str]], operation: 
     Raises:
         InputError: If required feature flags are not enabled.
     """
-    from fabric_cicd.constants import FeatureFlag
-
     validate_experimental_param(
         param_value=items_to_include,
         required_flag=FeatureFlag.ENABLE_ITEMS_TO_INCLUDE,
@@ -224,13 +220,29 @@ def validate_folder_path_exclude_regex(folder_path_exclude_regex: Optional[str])
     Raises:
         InputError: If required feature flags are not enabled.
     """
-    from fabric_cicd.constants import FeatureFlag
-
     validate_experimental_param(
         param_value=folder_path_exclude_regex,
         required_flag=FeatureFlag.ENABLE_EXCLUDE_FOLDER,
         warning_message="Folder path exclusion is enabled.",
         risk_warning="Using folder_path_exclude_regex is risky as it can prevent needed dependencies from being deployed.  Use at your own risk.",
+    )
+
+
+def validate_folder_path_to_include(folder_path_to_include: Optional[str]) -> None:
+    """
+    Validate folder_path_to_include parameter and check required feature flags.
+
+    Args:
+        folder_path_to_include: List of folder paths (with items) to publish.
+
+    Raises:
+        InputError: If required feature flags are not enabled.
+    """
+    validate_experimental_param(
+        param_value=folder_path_to_include,
+        required_flag=FeatureFlag.ENABLE_INCLUDE_FOLDER,
+        warning_message="Folder path inclusion is enabled.",
+        risk_warning="Using folder_path_to_include is risky as it can prevent needed dependencies from being deployed.  Use at your own risk.",
     )
 
 
@@ -244,8 +256,6 @@ def validate_shortcut_exclude_regex(shortcut_exclude_regex: Optional[str]) -> No
     Raises:
         InputError: If required feature flags are not enabled.
     """
-    from fabric_cicd.constants import FeatureFlag
-
     validate_experimental_param(
         param_value=shortcut_exclude_regex,
         required_flag=FeatureFlag.ENABLE_SHORTCUT_EXCLUDE,

@@ -123,6 +123,8 @@ class FeatureFlag(str, Enum):
     """Set to enable selective publishing/unpublishing of items."""
     ENABLE_EXCLUDE_FOLDER = "enable_exclude_folder"
     """Set to enable folder-based exclusion during publish operations."""
+    ENABLE_INCLUDE_FOLDER = "enable_include_folder"
+    """Set to enable folder-based inclusion during publish operations."""
     ENABLE_SHORTCUT_EXCLUDE = "enable_shortcut_exclude"
     """Set to enable selective publishing of shortcuts in a Lakehouse."""
     ENABLE_CONFIG_DEPLOY = "enable_config_deploy"
