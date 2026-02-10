@@ -743,7 +743,7 @@ def test_legacy_folder_exclusion_example(mock_endpoint):
                 )
 
                 # Test: Exclude all items in 'legacy' folder using the folder path regex pattern
-                exclude_regex = r"^legacy/"  # Match items that start with 'legacy/'
+                exclude_regex = r"^/legacy"  # Match items that start with 'legacy/'
                 publish.publish_all_items(workspace, folder_path_exclude_regex=exclude_regex)
 
                 # Verify that legacy items were excluded
@@ -752,6 +752,136 @@ def test_legacy_folder_exclusion_example(mock_endpoint):
 
                 # Verify that current items were NOT excluded
                 assert workspace.repository_items["Notebook"]["CurrentNotebook"].skip_publish is False
+
+            finally:
+                # Restore original feature flags
+                constants.FEATURE_FLAG.clear()
+                constants.FEATURE_FLAG.update(original_flags)
+
+
+def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
+    """Test that folder_path_to_include only publishes items in specified folders."""
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create items in 'active' folder (should be included)
+        active_notebook_dir = temp_path / "active" / "ActiveNotebook.Notebook"
+        active_notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        active_notebook_platform = active_notebook_dir / ".platform"
+        active_notebook_metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "ActiveNotebook",
+                "description": "Active notebook to be included",
+            },
+            "config": {"logicalId": "active-notebook-id"},
+        }
+
+        with active_notebook_platform.open("w", encoding="utf-8") as f:
+            json.dump(active_notebook_metadata, f)
+
+        with (active_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        active_model_dir = temp_path / "active" / "ActiveModel.SemanticModel"
+        active_model_dir.mkdir(parents=True, exist_ok=True)
+
+        active_model_platform = active_model_dir / ".platform"
+        active_model_metadata = {
+            "metadata": {
+                "type": "SemanticModel",
+                "displayName": "ActiveModel",
+                "description": "Active semantic model to be included",
+            },
+            "config": {"logicalId": "active-model-id"},
+        }
+
+        with active_model_platform.open("w", encoding="utf-8") as f:
+            json.dump(active_model_metadata, f)
+
+        with (active_model_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        # Create items in 'archive' folder (should be excluded)
+        archive_notebook_dir = temp_path / "archive" / "ArchivedNotebook.Notebook"
+        archive_notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        archive_notebook_platform = archive_notebook_dir / ".platform"
+        archive_notebook_metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "ArchivedNotebook",
+                "description": "Archived notebook to be excluded",
+            },
+            "config": {"logicalId": "archived-notebook-id"},
+        }
+
+        with archive_notebook_platform.open("w", encoding="utf-8") as f:
+            json.dump(archive_notebook_metadata, f)
+
+        with (archive_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        # Create root-level item (should be excluded since not in included folder)
+        root_notebook_dir = temp_path / "RootNotebook.Notebook"
+        root_notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        root_notebook_platform = root_notebook_dir / ".platform"
+        root_notebook_metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "RootNotebook",
+                "description": "Root level notebook to be excluded",
+            },
+            "config": {"logicalId": "root-notebook-id"},
+        }
+
+        with root_notebook_platform.open("w", encoding="utf-8") as f:
+            json.dump(root_notebook_metadata, f)
+
+        with (root_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        with (
+            patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+            patch.object(
+                FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})
+            ),
+            patch.object(
+                FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+            ),
+        ):
+            # Enable experimental feature flags for folder inclusion
+            original_flags = constants.FEATURE_FLAG.copy()
+            constants.FEATURE_FLAG.add("enable_experimental_features")
+            constants.FEATURE_FLAG.add("enable_include_folder")
+
+            try:
+                workspace = FabricWorkspace(
+                    workspace_id="12345678-1234-5678-abcd-1234567890ab",
+                    repository_directory=str(temp_path),
+                    item_type_in_scope=["Notebook", "SemanticModel"],
+                )
+
+                # Test: Only include items in 'active' folder
+                publish.publish_all_items(workspace, folder_path_to_include=["/active"])
+
+                # Verify that repository_items are populated correctly
+                assert "Notebook" in workspace.repository_items
+                assert "SemanticModel" in workspace.repository_items
+
+                # Check that active items were NOT marked for exclusion (skip_publish = False)
+                assert workspace.repository_items["Notebook"]["ActiveNotebook"].skip_publish is False
+                assert workspace.repository_items["SemanticModel"]["ActiveModel"].skip_publish is False
+
+                # Check that archive items were marked for exclusion (skip_publish = True)
+                assert workspace.repository_items["Notebook"]["ArchivedNotebook"].skip_publish is True
+
+                # Root-level items have an empty folder_path so they are not evaluated
+                # against folder_path_to_include and remain publishable
+                assert workspace.repository_items["Notebook"]["RootNotebook"].skip_publish is False
 
             finally:
                 # Restore original feature flags

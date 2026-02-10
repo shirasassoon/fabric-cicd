@@ -418,6 +418,7 @@ def deploy_with_config(
             workspace,
             item_name_exclude_regex=publish_settings.get("exclude_regex"),
             folder_path_exclude_regex=publish_settings.get("folder_exclude_regex"),
+            folder_path_to_include=publish_settings.get("folders_to_include"),
             items_to_include=publish_settings.get("items_to_include"),
             shortcut_exclude_regex=publish_settings.get("shortcut_exclude_regex"),
         )

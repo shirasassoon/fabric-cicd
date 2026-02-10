@@ -459,6 +459,7 @@ class TestDeployWithConfig:
             mock_workspace_instance,
             item_name_exclude_regex="^DONT_DEPLOY.*",
             folder_path_exclude_regex=None,
+            folder_path_to_include=None,
             items_to_include=None,
             shortcut_exclude_regex=None,
         )
@@ -643,11 +644,96 @@ class TestDeployWithConfig:
             mock_workspace_instance,
             item_name_exclude_regex=None,
             folder_path_exclude_regex=None,
+            folder_path_to_include=None,
             items_to_include=None,
             shortcut_exclude_regex="^temp_.*",
         )
         # Verify unpublish was also called (but without shortcut_exclude_regex since it's publish-only)
         mock_unpublish.assert_called_once()
+
+    @patch("fabric_cicd.publish.FabricWorkspace")
+    @patch("fabric_cicd.publish.publish_all_items")
+    @patch("fabric_cicd.publish.unpublish_all_orphan_items")
+    @patch("fabric_cicd.constants.FEATURE_FLAG", set(["enable_experimental_features", "enable_config_deploy"]))
+    def test_folder_path_to_include_passed_to_publish(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):
+        """Test that folder_path_to_include from config is passed to publish_all_items."""
+        test_repo_dir = tmp_path / "repo"
+        test_repo_dir.mkdir(parents=True)
+
+        config_data = {
+            "core": {
+                "workspace_id": "11111111-1111-1111-1111-111111111111",
+                "repository_directory": str(test_repo_dir),
+            },
+            "publish": {
+                "folders_to_include": ["/my/folder/path"],
+            },
+        }
+        config_file = tmp_path / "config.yml"
+        with Path.open(config_file, "w") as f:
+            yaml.dump(config_data, f)
+
+        mock_workspace.return_value = MagicMock()
+        deploy_with_config(str(config_file), "dev")
+
+        call_args = mock_publish.call_args[1]
+        assert call_args["folder_path_to_include"] == ["/my/folder/path"]
+
+    @patch("fabric_cicd.publish.FabricWorkspace")
+    @patch("fabric_cicd.publish.publish_all_items")
+    @patch("fabric_cicd.publish.unpublish_all_orphan_items")
+    @patch("fabric_cicd.constants.FEATURE_FLAG", set(["enable_experimental_features", "enable_config_deploy"]))
+    def test_folder_path_to_include_defaults_to_none(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):
+        """Test that folder_path_to_include defaults to None when not specified."""
+        test_repo_dir = tmp_path / "repo"
+        test_repo_dir.mkdir(parents=True)
+
+        config_data = {
+            "core": {
+                "workspace_id": "11111111-1111-1111-1111-111111111111",
+                "repository_directory": str(test_repo_dir),
+            },
+        }
+        config_file = tmp_path / "config.yml"
+        with Path.open(config_file, "w") as f:
+            yaml.dump(config_data, f)
+
+        mock_workspace.return_value = MagicMock()
+        deploy_with_config(str(config_file), "dev")
+
+        call_args = mock_publish.call_args[1]
+        assert "folders_to_include" not in call_args
+
+    @patch("fabric_cicd.publish.FabricWorkspace")
+    @patch("fabric_cicd.publish.publish_all_items")
+    @patch("fabric_cicd.publish.unpublish_all_orphan_items")
+    @patch("fabric_cicd.constants.FEATURE_FLAG", set(["enable_experimental_features", "enable_config_deploy"]))
+    def test_folder_path_to_include_environment_specific(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):
+        """Test that folder_path_to_include resolves environment-specific values."""
+        test_repo_dir = tmp_path / "repo"
+        test_repo_dir.mkdir(parents=True)
+
+        config_data = {
+            "core": {
+                "workspace_id": {
+                    "dev": "11111111-1111-1111-1111-111111111111",
+                    "prod": "22222222-2222-2222-2222-222222222222",
+                },
+                "repository_directory": str(test_repo_dir),
+            },
+            "publish": {
+                "folders_to_include": {"dev": ["/dev/folder"], "prod": ["/prod/folder"]},
+            },
+        }
+        config_file = tmp_path / "config.yml"
+        with Path.open(config_file, "w") as f:
+            yaml.dump(config_data, f)
+
+        mock_workspace.return_value = MagicMock()
+        deploy_with_config(str(config_file), "dev")
+
+        call_args = mock_publish.call_args[1]
+        assert call_args["folder_path_to_include"] == ["/dev/folder"]
 
 
 class TestConfigIntegration:
@@ -860,6 +946,42 @@ class TestConfigUtilsExtractSettings:
         # prod environment not defined - setting should be skipped
         settings = extract_publish_settings(config, "prod")
         assert "items_to_include" not in settings
+
+    def test_extract_publish_settings_folders_to_include_list(self):
+        """Test extract_publish_settings returns folders_to_include as a list."""
+        config = {
+            "publish": {
+                "folders_to_include": ["/my/folder/path"],
+            },
+        }
+        result = extract_publish_settings(config, "dev")
+        assert result["folders_to_include"] == ["/my/folder/path"]
+
+    def test_extract_publish_settings_folders_to_include_env_specific(self):
+        """Test extract_publish_settings resolves folders_to_include per environment."""
+        config = {
+            "publish": {
+                "folders_to_include": {"dev": ["/dev/folder"], "prod": ["/prod/folder"]},
+            },
+        }
+        result = extract_publish_settings(config, "dev")
+        assert result["folders_to_include"] == ["/dev/folder"]
+
+    def test_extract_publish_settings_folders_to_include_missing(self):
+        """Test extract_publish_settings defaults folders_to_include to None."""
+        config = {
+            "publish": {
+                "exclude_regex": "^SKIP.*",
+            },
+        }
+        settings = extract_publish_settings(config, "dev")
+        assert "folders_to_include" not in settings
+
+    def test_extract_publish_settings_no_publish_section_folders_to_include(self):
+        """Test extract_publish_settings defaults folders_to_include to None when no publish section."""
+        config = {}
+        settings = extract_publish_settings(config, "dev")
+        assert "folders_to_include" not in settings
 
 
 class TestGetConfigValue:

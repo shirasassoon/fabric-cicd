@@ -375,6 +375,7 @@ CONFIG_VALIDATION_MSGS = {
     # Field validation
     "field": {
         "string_or_dict": "'{}' must be either a string or environment mapping dictionary (e.g., {{dev: 'dev_value', prod: 'prod_value'}}), got type {}",
+        "list_or_dict": "'{}' must be a list or environment mapping dictionary (e.g., {{dev: 'dev_value', prod: 'prod_value'}}), got type {}",
         "empty_value": "'{}' cannot be empty",
         "empty_list": "'{}' cannot be empty if specified",
         "invalid_guid": "'{}' must be a valid GUID format: {}",
@@ -396,6 +397,7 @@ CONFIG_VALIDATION_MSGS = {
     },
     # Operation section validation
     "operation": {
+        "unsupported_field": "'{}' field is not supported in '{}' section",
         "not_dict": "'{}' section must be a dictionary, got {}",
         "invalid_regex": "'{}' in {} is not a valid regex pattern: {}",
         "items_list_type": "'{}[{}]' must be a string, got {}",
@@ -405,6 +407,9 @@ CONFIG_VALIDATION_MSGS = {
         "empty_section_env": "'{}.{}' cannot be empty if specified",
         "invalid_constant_key": "Constant key in '{}' must be a non-empty string, got: {}",
         "unknown_constant": "Unknown constant '{}' in '{}' - this constant does not exist in fabric_cicd.constants",
+        "folders_list_type": "'{}[{}]' must be a string, got {}",
+        "folders_list_empty": "'{}[{}]' cannot be empty",
+        "folders_list_prefix": "'{}[{}]' entry must start with '/' (got '{}')",
     },
     # Log messages
     "log": {

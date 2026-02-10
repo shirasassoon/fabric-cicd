@@ -855,6 +855,7 @@ class FabricWorkspace:
                 if regex_pattern.search(folder_path):
                     logger.info(f"Skipping publishing of folder '{folder_path}' due to folder path exclusion regex.")
                     continue
+                logger.debug(f"Folder path '{folder_path}' does not match the exclusion regex pattern.")
             if folder_path in self.deployed_folders:
                 # Folder already deployed, update local hierarchy
                 self.repository_folders[folder_path] = self.deployed_folders[folder_path]
