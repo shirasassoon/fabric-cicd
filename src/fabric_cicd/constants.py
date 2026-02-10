@@ -127,8 +127,6 @@ class FeatureFlag(str, Enum):
     """Set to enable folder-based inclusion during publish operations."""
     ENABLE_SHORTCUT_EXCLUDE = "enable_shortcut_exclude"
     """Set to enable selective publishing of shortcuts in a Lakehouse."""
-    ENABLE_CONFIG_DEPLOY = "enable_config_deploy"
-    """Set to enable config file-based deployment."""
     ENABLE_RESPONSE_COLLECTION = "enable_response_collection"
     """Set to enable collection of API responses during publish operations."""
     DISABLE_PRINT_IDENTITY = "disable_print_identity"
