@@ -660,7 +660,7 @@ class TestDeployWithConfig:
                 "repository_directory": str(test_repo_dir),
             },
             "publish": {
-                "folders_to_include": ["/my/folder/path"],
+                "folder_path_to_include": ["/my/folder/path"],
             },
         }
         config_file = tmp_path / "config.yml"
@@ -696,7 +696,7 @@ class TestDeployWithConfig:
         deploy_with_config(str(config_file), "dev")
 
         call_args = mock_publish.call_args[1]
-        assert "folders_to_include" not in call_args
+        assert "folder_path_to_include" not in call_args
 
     @patch("fabric_cicd.publish.FabricWorkspace")
     @patch("fabric_cicd.publish.publish_all_items")
@@ -716,7 +716,7 @@ class TestDeployWithConfig:
                 "repository_directory": str(test_repo_dir),
             },
             "publish": {
-                "folders_to_include": {"dev": ["/dev/folder"], "prod": ["/prod/folder"]},
+                "folder_path_to_include": {"dev": ["/dev/folder"], "prod": ["/prod/folder"]},
             },
         }
         config_file = tmp_path / "config.yml"
@@ -825,33 +825,33 @@ class TestConfigUtilsExtractSettings:
         """Test extracting publish settings with folder_exclude_regex."""
         config = {
             "publish": {
-                "folder_exclude_regex": "^DONT_DEPLOY_FOLDER/",
+                "folder_exclude_regex": "^/DONT_DEPLOY_FOLDER",
             }
         }
 
         settings = extract_publish_settings(config, "dev")
-        assert settings["folder_exclude_regex"] == "^DONT_DEPLOY_FOLDER/"
+        assert settings["folder_exclude_regex"] == "^/DONT_DEPLOY_FOLDER"
 
     def test_extract_publish_settings_with_environment_specific_folder_exclude_regex(self):
         """Test extracting publish settings with environment-specific folder_exclude_regex."""
         config = {
             "publish": {
-                "folder_exclude_regex": {"dev": "^DEV_FOLDER/", "prod": "^PROD_FOLDER/"},
+                "folder_exclude_regex": {"dev": "^/DEV_FOLDER", "prod": "^/PROD_FOLDER"},
             }
         }
 
         settings = extract_publish_settings(config, "dev")
-        assert settings["folder_exclude_regex"] == "^DEV_FOLDER/"
+        assert settings["folder_exclude_regex"] == "^/DEV_FOLDER"
 
         settings = extract_publish_settings(config, "prod")
-        assert settings["folder_exclude_regex"] == "^PROD_FOLDER/"
+        assert settings["folder_exclude_regex"] == "^/PROD_FOLDER"
 
     def test_extract_publish_settings_missing_environment_skips_setting(self):
         """Test that missing environment in optional publish settings skips the setting."""
         config = {
             "publish": {
                 "exclude_regex": {"dev": "^DEV.*"},  # Only dev defined
-                "folder_exclude_regex": {"dev": "^DEV_FOLDER/"},  # Only dev defined
+                "folder_exclude_regex": {"dev": "^/DEV_FOLDER"},  # Only dev defined
             }
         }
 
@@ -941,41 +941,41 @@ class TestConfigUtilsExtractSettings:
         settings = extract_publish_settings(config, "prod")
         assert "items_to_include" not in settings
 
-    def test_extract_publish_settings_folders_to_include_list(self):
-        """Test extract_publish_settings returns folders_to_include as a list."""
+    def test_extract_publish_settings_folder_path_to_include_list(self):
+        """Test extract_publish_settings returns folder_path_to_include as a list."""
         config = {
             "publish": {
-                "folders_to_include": ["/my/folder/path"],
+                "folder_path_to_include": ["/my/folder/path"],
             },
         }
         result = extract_publish_settings(config, "dev")
-        assert result["folders_to_include"] == ["/my/folder/path"]
+        assert result["folder_path_to_include"] == ["/my/folder/path"]
 
-    def test_extract_publish_settings_folders_to_include_env_specific(self):
-        """Test extract_publish_settings resolves folders_to_include per environment."""
+    def test_extract_publish_settings_folder_path_to_include_env_specific(self):
+        """Test extract_publish_settings resolves folder_path_to_include per environment."""
         config = {
             "publish": {
-                "folders_to_include": {"dev": ["/dev/folder"], "prod": ["/prod/folder"]},
+                "folder_path_to_include": {"dev": ["/dev/folder"], "prod": ["/prod/folder"]},
             },
         }
         result = extract_publish_settings(config, "dev")
-        assert result["folders_to_include"] == ["/dev/folder"]
+        assert result["folder_path_to_include"] == ["/dev/folder"]
 
-    def test_extract_publish_settings_folders_to_include_missing(self):
-        """Test extract_publish_settings defaults folders_to_include to None."""
+    def test_extract_publish_settings_folder_path_to_include_missing(self):
+        """Test extract_publish_settings defaults folder_path_to_include to None."""
         config = {
             "publish": {
                 "exclude_regex": "^SKIP.*",
             },
         }
         settings = extract_publish_settings(config, "dev")
-        assert "folders_to_include" not in settings
+        assert "folder_path_to_include" not in settings
 
-    def test_extract_publish_settings_no_publish_section_folders_to_include(self):
-        """Test extract_publish_settings defaults folders_to_include to None when no publish section."""
+    def test_extract_publish_settings_no_publish_section_folder_path_to_include(self):
+        """Test extract_publish_settings defaults folder_path_to_include to None when no publish section."""
         config = {}
         settings = extract_publish_settings(config, "dev")
-        assert "folders_to_include" not in settings
+        assert "folder_path_to_include" not in settings
 
 
 class TestGetConfigValue:

@@ -113,7 +113,7 @@ def extract_publish_settings(config: dict, environment: str) -> dict:
         settings_to_update = [
             "exclude_regex",
             "folder_exclude_regex",
-            "folders_to_include",
+            "folder_path_to_include",
             "items_to_include",
             "shortcut_exclude_regex",
         ]

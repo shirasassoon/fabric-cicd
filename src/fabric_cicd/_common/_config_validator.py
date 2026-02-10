@@ -783,39 +783,39 @@ class ConfigValidator:
                     )
                 )
 
-        # Validate folders_to_include if present (publish only)
-        if "folders_to_include" in section:
+        # Validate folder_path_to_include if present (publish only)
+        if "folder_path_to_include" in section:
             if section_name != "publish":
                 self.errors.append(
                     constants.CONFIG_VALIDATION_MSGS["operation"]["unsupported_field"].format(
-                        "folders_to_include", section_name
+                        "folder_path_to_include", section_name
                     )
                 )
 
-            folders = section["folders_to_include"]
+            folders = section["folder_path_to_include"]
             if isinstance(folders, list):
                 if not folders:
                     self.errors.append(
                         constants.CONFIG_VALIDATION_MSGS["field"]["empty_list"].format(
-                            f"{section_name}.folders_to_include"
+                            f"{section_name}.folder_path_to_include"
                         )
                     )
                 else:
-                    self._validate_folders_list(folders, f"{section_name}.folders_to_include")
+                    self._validate_folders_list(folders, f"{section_name}.folder_path_to_include")
 
             elif isinstance(folders, dict):
                 # Validate environment mapping
-                if not self._validate_environment_mapping(folders, f"{section_name}.folders_to_include", list):
+                if not self._validate_environment_mapping(folders, f"{section_name}.folder_path_to_include", list):
                     return
 
                 # Validate each environment's folders list
                 for env, folders_list in folders.items():
-                    self._validate_folders_list(folders_list, f"{section_name}.folders_to_include.{env}")
+                    self._validate_folders_list(folders_list, f"{section_name}.folder_path_to_include.{env}")
 
             else:
                 self.errors.append(
                     constants.CONFIG_VALIDATION_MSGS["field"]["list_or_dict"].format(
-                        f"{section_name}.folders_to_include", type(folders).__name__
+                        f"{section_name}.folder_path_to_include", type(folders).__name__
                     )
                 )
 
@@ -1018,7 +1018,7 @@ def _get_config_fields(config: dict) -> list[tuple[dict, str, str, bool, bool]]:
         # Publish section fields - optional (debug if missing)
         (config.get("publish", {}), "exclude_regex", "publish.exclude_regex", False, False),
         (config.get("publish", {}), "folder_exclude_regex", "publish.folder_exclude_regex", False, False),
-        (config.get("publish", {}), "folders_to_include", "publish.folders_to_include", False, False),
+        (config.get("publish", {}), "folder_path_to_include", "publish.folder_path_to_include", False, False),
         (config.get("publish", {}), "shortcut_exclude_regex", "publish.shortcut_exclude_regex", False, False),
         (config.get("publish", {}), "items_to_include", "publish.items_to_include", False, False),
         (config.get("publish", {}), "skip", "publish.skip", False, False),

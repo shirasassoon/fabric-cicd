@@ -1376,7 +1376,7 @@ class TestConfigValidatorUtilityFunctions:
             "publish": {
                 "exclude_regex": ".*_test",
                 "folder_exclude_regex": "^/temp",
-                "folders_to_include": ["/subfolder"],
+                "folder_path_to_include": ["/subfolder"],
                 "shortcut_exclude_regex": "^shortcut_temp/",
                 "items_to_include": ["item1"],
                 "skip": False,
@@ -1732,7 +1732,7 @@ class TestOperationSectionValidation:
 
     def test_validate_operation_section_with_folder_exclude_regex(self):
         """Test _validate_operation_section with folder_exclude_regex."""
-        section = {"folder_exclude_regex": "^DONT_DEPLOY_FOLDER/"}
+        section = {"folder_exclude_regex": "^/DONT_DEPLOY_FOLDER"}
 
         self.validator._validate_operation_section(section, "publish")
 
@@ -1749,7 +1749,7 @@ class TestOperationSectionValidation:
 
     def test_validate_operation_section_with_folder_exclude_regex_environment_mapping(self):
         """Test _validate_operation_section with folder_exclude_regex environment mapping."""
-        section = {"folder_exclude_regex": {"dev": "^DEV_FOLDER/", "prod": "^PROD_FOLDER/"}}
+        section = {"folder_exclude_regex": {"dev": "^/DEV_FOLDER", "prod": "^/PROD_FOLDER"}}
 
         self.validator._validate_operation_section(section, "publish")
 
@@ -1761,7 +1761,7 @@ class TestOperationSectionValidation:
         # This test doesn't directly test the implementation or error message
 
         # Test that it's allowed in publish
-        section_publish = {"folder_exclude_regex": "^DONT_DEPLOY_FOLDER/"}
+        section_publish = {"folder_exclude_regex": "^/DONT_DEPLOY_FOLDER"}
         self.validator.errors = []  # Reset errors
         self.validator._validate_operation_section(section_publish, "publish")
         assert len(self.validator.errors) == 0  # Should be valid in publish
@@ -1769,101 +1769,105 @@ class TestOperationSectionValidation:
         # We can't test the negative case (unpublish) directly due to missing error message key
         # So we'll just document that the feature should be restricted to publish section
 
-    def test_validate_operation_section_folders_to_include_valid_list(self):
-        """Test _validate_operation_section with valid folders_to_include list."""
-        section = {"folders_to_include": ["/FolderA", "/FolderB"]}
+    def test_validate_operation_section_folder_path_to_include_valid_list(self):
+        """Test _validate_operation_section with valid folder_path_to_include list."""
+        section = {"folder_path_to_include": ["/FolderA", "/FolderB"]}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 0
 
-    def test_validate_operation_section_folders_to_include_valid_env_mapping(self):
-        """Test _validate_operation_section with valid folders_to_include environment mapping."""
-        section = {"folders_to_include": {"dev": ["/FolderA"], "prod": ["/FolderA", "/FolderB"]}}
+    def test_validate_operation_section_folder_path_to_include_valid_env_mapping(self):
+        """Test _validate_operation_section with valid folder_path_to_include environment mapping."""
+        section = {"folder_path_to_include": {"dev": ["/FolderA"], "prod": ["/FolderA", "/FolderB"]}}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 0
 
-    def test_validate_operation_section_folders_to_include_empty_list(self):
-        """Test _validate_operation_section with empty folders_to_include list."""
-        section = {"folders_to_include": []}
+    def test_validate_operation_section_folder_path_to_include_empty_list(self):
+        """Test _validate_operation_section with empty folder_path_to_include list."""
+        section = {"folder_path_to_include": []}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["field"]["empty_list"].format("publish.folders_to_include")
+            constants.CONFIG_VALIDATION_MSGS["field"]["empty_list"].format("publish.folder_path_to_include")
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_invalid_type(self):
-        """Test _validate_operation_section with folders_to_include invalid type."""
-        section = {"folders_to_include": "not a list or dict"}
+    def test_validate_operation_section_folder_path_to_include_invalid_type(self):
+        """Test _validate_operation_section with folder_path_to_include invalid type."""
+        section = {"folder_path_to_include": "not a list or dict"}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["field"]["list_or_dict"].format("publish.folders_to_include", "str")
+            constants.CONFIG_VALIDATION_MSGS["field"]["list_or_dict"].format("publish.folder_path_to_include", "str")
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_unsupported_in_unpublish(self):
-        """Test _validate_operation_section with folders_to_include in unpublish section."""
-        section = {"folders_to_include": ["/FolderA"]}
+    def test_validate_operation_section_folder_path_to_include_unsupported_in_unpublish(self):
+        """Test _validate_operation_section with folder_path_to_include in unpublish section."""
+        section = {"folder_path_to_include": ["/FolderA"]}
 
         self.validator._validate_operation_section(section, "unpublish")
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["operation"]["unsupported_field"].format("folders_to_include", "unpublish")
+            constants.CONFIG_VALIDATION_MSGS["operation"]["unsupported_field"].format(
+                "folder_path_to_include", "unpublish"
+            )
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_entry_not_string(self):
-        """Test _validate_operation_section with non-string entry in folders_to_include."""
-        section = {"folders_to_include": ["/FolderA", 123, "/FolderB"]}
+    def test_validate_operation_section_folder_path_to_include_entry_not_string(self):
+        """Test _validate_operation_section with non-string entry in folder_path_to_include."""
+        section = {"folder_path_to_include": ["/FolderA", 123, "/FolderB"]}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
             constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_type"].format(
-                "publish.folders_to_include", 1, "int"
+                "publish.folder_path_to_include", 1, "int"
             )
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_empty_string_entry(self):
-        """Test _validate_operation_section with empty string entry in folders_to_include."""
-        section = {"folders_to_include": ["/FolderA", "", "/FolderB"]}
+    def test_validate_operation_section_folder_path_to_include_empty_string_entry(self):
+        """Test _validate_operation_section with empty string entry in folder_path_to_include."""
+        section = {"folder_path_to_include": ["/FolderA", "", "/FolderB"]}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format("publish.folders_to_include", 1)
+            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format(
+                "publish.folder_path_to_include", 1
+            )
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_missing_prefix(self):
+    def test_validate_operation_section_folder_path_to_include_missing_prefix(self):
         """Test _validate_operation_section with folder entry missing leading slash."""
-        section = {"folders_to_include": ["/FolderA", "FolderB"]}
+        section = {"folder_path_to_include": ["/FolderA", "FolderB"]}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
             constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_prefix"].format(
-                "publish.folders_to_include", 1, "FolderB"
+                "publish.folder_path_to_include", 1, "FolderB"
             )
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_env_mapping_empty_list(self):
-        """Test _validate_operation_section with empty list in environment mapping for folders_to_include."""
-        section = {"folders_to_include": {"dev": ["/FolderA"], "prod": []}}
+    def test_validate_operation_section_folder_path_to_include_env_mapping_empty_list(self):
+        """Test _validate_operation_section with empty list in environment mapping for folder_path_to_include."""
+        section = {"folder_path_to_include": {"dev": ["/FolderA"], "prod": []}}
 
         self.validator._validate_operation_section(section, "publish")
 
@@ -1871,42 +1875,44 @@ class TestOperationSectionValidation:
         print(self.validator.errors[0])
         assert (
             constants.CONFIG_VALIDATION_MSGS["environment"]["empty_env_value"].format(
-                "publish.folders_to_include", "prod"
+                "publish.folder_path_to_include", "prod"
             )
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_env_mapping_invalid_entry(self):
-        """Test _validate_operation_section with invalid entry in environment mapping for folders_to_include."""
-        section = {"folders_to_include": {"dev": ["/FolderA", "NoSlash"]}}
+    def test_validate_operation_section_folder_path_to_include_env_mapping_invalid_entry(self):
+        """Test _validate_operation_section with invalid entry in environment mapping for folder_path_to_include."""
+        section = {"folder_path_to_include": {"dev": ["/FolderA", "NoSlash"]}}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
             constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_prefix"].format(
-                "publish.folders_to_include.dev", 1, "NoSlash"
+                "publish.folder_path_to_include.dev", 1, "NoSlash"
             )
             in self.validator.errors[0]
         )
 
-    def test_validate_operation_section_folders_to_include_nested_path(self):
-        """Test _validate_operation_section with nested folder paths in folders_to_include."""
-        section = {"folders_to_include": ["/FolderA/SubFolder", "/FolderB/Sub1/Sub2"]}
+    def test_validate_operation_section_folder_path_to_include_nested_path(self):
+        """Test _validate_operation_section with nested folder paths in folder_path_to_include."""
+        section = {"folder_path_to_include": ["/FolderA/SubFolder", "/FolderB/Sub1/Sub2"]}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 0
 
-    def test_validate_operation_section_folders_to_include_whitespace_entry(self):
-        """Test _validate_operation_section with whitespace-only entry in folders_to_include."""
-        section = {"folders_to_include": ["/FolderA", "   "]}
+    def test_validate_operation_section_folder_path_to_include_whitespace_entry(self):
+        """Test _validate_operation_section with whitespace-only entry in folder_path_to_include."""
+        section = {"folder_path_to_include": ["/FolderA", "   "]}
 
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format("publish.folders_to_include", 1)
+            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format(
+                "publish.folder_path_to_include", 1
+            )
             in self.validator.errors[0]
         )
 

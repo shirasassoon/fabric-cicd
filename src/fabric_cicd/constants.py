@@ -323,7 +323,13 @@ CONFIG_SECTIONS = {
     },
     "publish": {
         "type": dict,
-        "settings": ["exclude_regex", "folder_exclude_regex", "items_to_include", "shortcut_exclude_regex", "skip"],
+        "settings": [
+            "exclude_regex",
+            "folder_exclude_regex",
+            "folder_path_to_include",
+            "shortcut_exclude_regex",
+            "skip",
+        ],
     },
     "unpublish": {"type": dict, "settings": ["exclude_regex", "items_to_include", "skip"]},
     "features": {"type": (list, dict), "settings": []},

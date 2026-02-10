@@ -105,7 +105,7 @@ def publish_all_items(
         ...     repository_directory="/path/to/repo",
         ...     item_type_in_scope=["Environment", "Notebook", "DataPipeline"]
         ... )
-        >>> folder_exclude_regex = "^legacy/"
+        >>> folder_exclude_regex = "^/legacy"
         >>> publish_all_items(workspace, folder_path_exclude_regex=folder_exclude_regex)
 
         With folder inclusion
@@ -410,7 +410,7 @@ def deploy_with_config(
             workspace,
             item_name_exclude_regex=publish_settings.get("exclude_regex"),
             folder_path_exclude_regex=publish_settings.get("folder_exclude_regex"),
-            folder_path_to_include=publish_settings.get("folders_to_include"),
+            folder_path_to_include=publish_settings.get("folder_path_to_include"),
             items_to_include=publish_settings.get("items_to_include"),
             shortcut_exclude_regex=publish_settings.get("shortcut_exclude_regex"),
         )
