@@ -655,7 +655,7 @@ class TestDeployWithConfig:
     @patch("fabric_cicd.publish.publish_all_items")
     @patch("fabric_cicd.publish.unpublish_all_orphan_items")
     @patch("fabric_cicd.constants.FEATURE_FLAG", set(["enable_experimental_features", "enable_config_deploy"]))
-    def test_folder_path_to_include_passed_to_publish(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):
+    def test_folder_path_to_include_passed_to_publish(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):  # noqa: PT019
         """Test that folder_path_to_include from config is passed to publish_all_items."""
         test_repo_dir = tmp_path / "repo"
         test_repo_dir.mkdir(parents=True)
@@ -683,7 +683,7 @@ class TestDeployWithConfig:
     @patch("fabric_cicd.publish.publish_all_items")
     @patch("fabric_cicd.publish.unpublish_all_orphan_items")
     @patch("fabric_cicd.constants.FEATURE_FLAG", set(["enable_experimental_features", "enable_config_deploy"]))
-    def test_folder_path_to_include_defaults_to_none(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):
+    def test_folder_path_to_include_defaults_to_none(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):  # noqa: PT019
         """Test that folder_path_to_include defaults to None when not specified."""
         test_repo_dir = tmp_path / "repo"
         test_repo_dir.mkdir(parents=True)
@@ -708,7 +708,7 @@ class TestDeployWithConfig:
     @patch("fabric_cicd.publish.publish_all_items")
     @patch("fabric_cicd.publish.unpublish_all_orphan_items")
     @patch("fabric_cicd.constants.FEATURE_FLAG", set(["enable_experimental_features", "enable_config_deploy"]))
-    def test_folder_path_to_include_environment_specific(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):
+    def test_folder_path_to_include_environment_specific(self, _mock_unpublish, mock_publish, mock_workspace, tmp_path):  # noqa: PT019
         """Test that folder_path_to_include resolves environment-specific values."""
         test_repo_dir = tmp_path / "repo"
         test_repo_dir.mkdir(parents=True)
