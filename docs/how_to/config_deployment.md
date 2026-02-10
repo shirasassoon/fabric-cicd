@@ -33,7 +33,7 @@ Raise a [feature request](https://github.com/microsoft/fabric-cicd/issues/new?te
 
 The configuration file includes several sections with configurable settings for different aspects of the deployment process.
 
-**Note**: Configuration values can be specified in two ways: as a single value (applied to any environment provided) or as an environment mapping. Both approaches can be used within the same configuration file - for example, using environment mappings for workspace IDs while keeping a single value for repository directory.
+**Note**: Configuration values can be specified in two ways: as a single value (applied to any target environment provided) or as an environment mapping. Both approaches can be used within the same configuration file - for example, using environment mappings for workspace IDs while keeping a single value for repository directory.
 
 ### Core Settings
 
@@ -115,7 +115,7 @@ core:
 
 `publish` is optional and can be used to control item publishing behavior. It includes various optional settings to enable/disable publishing operations or selectively publish items.
 
-**Important:** To effectively use folder exclusion/inclusion, ensure the folder path contains a `/` preceding the folder name — for example, `/folder_name` for a single folder or `/folder_name/nested_folder_name` for nested folders. For regex patterns, ensure the pattern matches folders with a `/` preceding the folder name. For folder inclusion lists, ensure the path exactly matches this format.
+**Note:** To effectively apply selective folder publishing via `folder_exclude_regex` and/or `folder_path_to_include`, ensure that the provided folder path starts with a `/` — for example, `/folder_name` for a top-level folder or `/folder_name/nested_folder_name` for nested folders. For regex patterns, ensure the pattern accounts for the leading `/`. Paths without a leading `/` (e.g., `folder_name/`) will not match correctly.
 
 ```yaml
 publish:
@@ -163,7 +163,7 @@ publish:
             - </subfolder_1>
             - </subfolder_2/subfolder_3>
         <env..>:
-            - </subfolder_2>
+            - </subfolder_1>
 
     # Optional - specific items to publish (requires feature flags)
     items_to_include:
