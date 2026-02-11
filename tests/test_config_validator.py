@@ -1696,7 +1696,7 @@ class TestOperationSectionValidation:
 
         assert len(self.validator.errors) == 1
         assert (
-            "'publish.items_to_include' must be a list or environment mapping dictionary (e.g., {dev: 'dev_value', prod: 'prod_value'}), got type str"
+            constants.CONFIG_VALIDATION_MSGS["field"]["list_or_dict"].format("publish.items_to_include", "str")
             in self.validator.errors[0]
         )
 
@@ -1872,7 +1872,6 @@ class TestOperationSectionValidation:
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
-        print(self.validator.errors[0])
         assert (
             constants.CONFIG_VALIDATION_MSGS["environment"]["empty_env_value"].format(
                 "publish.folder_path_to_include", "prod"

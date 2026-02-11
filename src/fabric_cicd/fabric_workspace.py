@@ -343,6 +343,7 @@ class FabricWorkspace:
                     logical_id=item_logical_id,
                     path=item_path,
                     folder_id=item_folder_id,
+                    folder_path=relative_parent_path,
                 )
 
                 self.repository_items[item_type][item_name].collect_item_files()
@@ -594,11 +595,7 @@ class FabricWorkspace:
 
         # Skip publishing if the folder path is excluded by the regex or not in the include list
         if self.publish_folder_path_exclude_regex or self.publish_folder_path_to_include:
-            relative_path = item.path.relative_to(Path(self.repository_directory))
-            # Build the folder path in the same format as repository_folders keys (/folder_name)
-            relative_parts = relative_path.as_posix().split("/")
-            # Remove the last part (item folder name) to get the parent folder path
-            folder_path = "/" + "/".join(relative_parts[:-1]) if len(relative_parts) > 1 else ""
+            folder_path = item.folder_path or ""
             if folder_path:
                 if self.publish_folder_path_exclude_regex:
                     regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
@@ -846,9 +843,16 @@ class FabricWorkspace:
         logger.info("Publishing Workspace Folders")
         for folder_path in sorted_folders:
             # Skip folders not in the include list
-            if self.publish_folder_path_to_include and folder_path not in self.publish_folder_path_to_include:
-                logger.info(f"Skipping publishing of folder '{folder_path}' as it is not in the include list.")
-                continue
+            # Ancestor folders must be published to preserve the correct hierarchy
+            # (e.g., if /A/B is included, /A must also be published).
+            if self.publish_folder_path_to_include:
+                is_included = folder_path in self.publish_folder_path_to_include
+                is_ancestor_of_included = any(
+                    included.startswith(folder_path + "/") for included in self.publish_folder_path_to_include
+                )
+                if not is_included and not is_ancestor_of_included:
+                    logger.info(f"Skipping publishing of folder '{folder_path}' as it is not in the include list.")
+                    continue
             # Skip folders matching the exclusion regex
             if self.publish_folder_path_exclude_regex:
                 regex_pattern = check_regex(self.publish_folder_path_exclude_regex)

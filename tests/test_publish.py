@@ -743,7 +743,7 @@ def test_legacy_folder_exclusion_example(mock_endpoint):
                 )
 
                 # Test: Exclude all items in 'legacy' folder using the folder path regex pattern
-                exclude_regex = r"^/legacy"  # Match items that start with 'legacy/'
+                exclude_regex = r"^/legacy"  # Match items that start with '/legacy'
                 publish.publish_all_items(workspace, folder_path_exclude_regex=exclude_regex)
 
                 # Verify that legacy items were excluded
@@ -760,12 +760,14 @@ def test_legacy_folder_exclusion_example(mock_endpoint):
 
 
 def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
-    """Test that folder_path_to_include only publishes items in specified folders."""
+    """Test that folder_path_to_include only filters items found within a Fabric folder.
+    Root-level items (not located within any subfolder) are always published,
+    as folder inclusion can only apply to items that reside inside a folder."""
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Create items in 'active' folder (should be included)
+        # Create items in 'active' folder (should be included via folder_path_to_include)
         active_notebook_dir = temp_path / "active" / "ActiveNotebook.Notebook"
         active_notebook_dir.mkdir(parents=True, exist_ok=True)
 
@@ -804,7 +806,7 @@ def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
         with (active_model_dir / "dummy.txt").open("w", encoding="utf-8") as f:
             f.write("Dummy file content")
 
-        # Create items in 'archive' folder (should be excluded)
+        # Create items in 'archive' folder (should be excluded - folder not in inclusion list)
         archive_notebook_dir = temp_path / "archive" / "ArchivedNotebook.Notebook"
         archive_notebook_dir.mkdir(parents=True, exist_ok=True)
 
@@ -824,7 +826,7 @@ def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
         with (archive_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
             f.write("Dummy file content")
 
-        # Create root-level item (should be excluded since not in included folder)
+        # Create root-level item (not inside any folder - always published)
         root_notebook_dir = temp_path / "RootNotebook.Notebook"
         root_notebook_dir.mkdir(parents=True, exist_ok=True)
 
@@ -833,7 +835,7 @@ def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
             "metadata": {
                 "type": "Notebook",
                 "displayName": "RootNotebook",
-                "description": "Root level notebook to be excluded",
+                "description": "Root level notebook - always published regardless of folder inclusion",
             },
             "config": {"logicalId": "root-notebook-id"},
         }
@@ -872,15 +874,16 @@ def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
                 assert "Notebook" in workspace.repository_items
                 assert "SemanticModel" in workspace.repository_items
 
-                # Check that active items were NOT marked for exclusion (skip_publish = False)
+                # Check that items in the included folder are published (skip_publish = False)
                 assert workspace.repository_items["Notebook"]["ActiveNotebook"].skip_publish is False
                 assert workspace.repository_items["SemanticModel"]["ActiveModel"].skip_publish is False
 
-                # Check that archive items were marked for exclusion (skip_publish = True)
+                # Check that items in a non-included folder are excluded (skip_publish = True)
                 assert workspace.repository_items["Notebook"]["ArchivedNotebook"].skip_publish is True
 
-                # Root-level items have an empty folder_path so they are not evaluated
-                # against folder_path_to_include and remain publishable
+                # Root-level items are not located within any Fabric folder, so
+                # folder_path_to_include does not apply to them. They are always
+                # published regardless of the folder inclusion filter.
                 assert workspace.repository_items["Notebook"]["RootNotebook"].skip_publish is False
 
             finally:

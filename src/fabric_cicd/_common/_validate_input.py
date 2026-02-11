@@ -228,12 +228,12 @@ def validate_folder_path_exclude_regex(folder_path_exclude_regex: Optional[str])
     )
 
 
-def validate_folder_path_to_include(folder_path_to_include: Optional[str]) -> None:
+def validate_folder_path_to_include(folder_path_to_include: Optional[list[str]]) -> None:
     """
     Validate folder_path_to_include parameter and check required feature flags.
 
     Args:
-        folder_path_to_include: List of folder paths (with items) to publish.
+        folder_path_to_include: List of folder paths with format ["/folder1", "/folder2", ...], or None.
 
     Raises:
         InputError: If required feature flags are not enabled.
