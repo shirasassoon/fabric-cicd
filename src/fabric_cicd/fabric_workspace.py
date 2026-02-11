@@ -599,12 +599,19 @@ class FabricWorkspace:
             if folder_path:
                 if self.publish_folder_path_exclude_regex:
                     regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
-                    if regex_pattern.search(folder_path):
-                        item.skip_publish = True
-                        logger.info(
-                            f"Skipping publishing of {item_type} '{item_name}' due to folder path exclusion regex."
-                        )
-                        return
+                    # Check if the folder path itself or any ancestor matches the exclusion regex
+                    path_to_check = folder_path
+                    while path_to_check:
+                        if regex_pattern.search(path_to_check):
+                            item.skip_publish = True
+                            logger.info(
+                                f"Skipping publishing of {item_type} '{item_name}' due to folder path exclusion regex."
+                            )
+                            return
+                        if "/" in path_to_check and path_to_check != "":
+                            path_to_check = path_to_check.rsplit("/", 1)[0]
+                        else:
+                            break
 
                 if self.publish_folder_path_to_include and folder_path not in self.publish_folder_path_to_include:
                     item.skip_publish = True
@@ -858,6 +865,20 @@ class FabricWorkspace:
                 regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
                 if regex_pattern.search(folder_path):
                     logger.info(f"Skipping publishing of folder '{folder_path}' due to folder path exclusion regex.")
+                    continue
+                # If any ancestor folder was excluded by the regex, skip this
+                # descendant folder too to preserve a consistent hierarchy
+                ancestor_path = folder_path
+                ancestor_excluded = False
+                while "/" in ancestor_path and ancestor_path != "":
+                    ancestor_path = ancestor_path.rsplit("/", 1)[0]
+                    if ancestor_path and regex_pattern.search(ancestor_path):
+                        ancestor_excluded = True
+                        break
+                if ancestor_excluded:
+                    logger.info(
+                        f"Skipping publishing of folder '{folder_path}' because ancestor folder was excluded by regex."
+                    )
                     continue
                 logger.debug(f"Folder path '{folder_path}' does not match the exclusion regex pattern.")
             if folder_path in self.deployed_folders:
