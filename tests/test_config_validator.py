@@ -431,7 +431,10 @@ class TestConfigValidator:
         self.validator._validate_items_list(items_list, "test_context")
 
         assert len(self.validator.errors) == 1
-        assert "'test_context[1]' cannot be empty" in self.validator.errors[0]
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format("test_context", 1)
+            in self.validator.errors[0]
+        )
 
     def test_validate_features_list_valid(self):
         """Test _validate_features_list with valid features."""
@@ -457,7 +460,10 @@ class TestConfigValidator:
         self.validator._validate_features_list(features_list, "test_context")
 
         assert len(self.validator.errors) == 1
-        assert "'test_context[1]' cannot be empty" in self.validator.errors[0]
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format("test_context", 1)
+            in self.validator.errors[0]
+        )
 
     def test_validate_constants_dict_valid(self):
         """Test _validate_constants_dict with valid constants."""
@@ -1643,7 +1649,10 @@ class TestOperationSectionValidation:
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
-        assert "'publish.exclude_regex' cannot be empty" in self.validator.errors[0]
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["empty_string"].format("publish.exclude_regex")
+            in self.validator.errors[0]
+        )
 
     def test_validate_operation_section_invalid_regex(self):
         """Test _validate_operation_section with invalid regex."""
@@ -1678,7 +1687,10 @@ class TestOperationSectionValidation:
         self.validator._validate_operation_section(section, "publish")
 
         assert len(self.validator.errors) == 1
-        assert "'publish.items_to_include' cannot be empty if specified" in self.validator.errors[0]
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["empty_list"].format("publish.items_to_include")
+            in self.validator.errors[0]
+        )
 
     def test_validate_operation_section_items_to_include_environment_mapping(self):
         """Test _validate_operation_section with items_to_include environment mapping."""
@@ -1793,7 +1805,7 @@ class TestOperationSectionValidation:
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["field"]["empty_list"].format("publish.folder_path_to_include")
+            constants.CONFIG_VALIDATION_MSGS["operation"]["empty_list"].format("publish.folder_path_to_include")
             in self.validator.errors[0]
         )
 
@@ -1831,7 +1843,7 @@ class TestOperationSectionValidation:
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_type"].format(
+            constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_type"].format(
                 "publish.folder_path_to_include", 1, "int"
             )
             in self.validator.errors[0]
@@ -1845,7 +1857,7 @@ class TestOperationSectionValidation:
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format(
+            constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format(
                 "publish.folder_path_to_include", 1
             )
             in self.validator.errors[0]
@@ -1909,7 +1921,7 @@ class TestOperationSectionValidation:
 
         assert len(self.validator.errors) == 1
         assert (
-            constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format(
+            constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format(
                 "publish.folder_path_to_include", 1
             )
             in self.validator.errors[0]

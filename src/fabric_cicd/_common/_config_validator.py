@@ -694,10 +694,12 @@ class ConfigValidator:
             if isinstance(exclude_regex, str):
                 if not exclude_regex.strip():
                     self.errors.append(
-                        constants.CONFIG_VALIDATION_MSGS["field"]["empty_value"].format(f"{section_name}.exclude_regex")
+                        constants.CONFIG_VALIDATION_MSGS["operation"]["empty_string"].format(
+                            f"{section_name}.exclude_regex"
+                        )
                     )
                 else:
-                    self._validate_regex(exclude_regex, section_name)
+                    self._validate_regex(exclude_regex, f"{section_name}.exclude_regex")
 
             elif isinstance(exclude_regex, dict):
                 # Validate environment mapping
@@ -722,7 +724,7 @@ class ConfigValidator:
             if isinstance(items, list):
                 if not items:
                     self.errors.append(
-                        constants.CONFIG_VALIDATION_MSGS["field"]["empty_list"].format(
+                        constants.CONFIG_VALIDATION_MSGS["operation"]["empty_list"].format(
                             f"{section_name}.items_to_include"
                         )
                     )
@@ -758,7 +760,7 @@ class ConfigValidator:
             if isinstance(folder_exclude_regex, str):
                 if not folder_exclude_regex.strip():
                     self.errors.append(
-                        constants.CONFIG_VALIDATION_MSGS["field"]["empty_value"].format(
+                        constants.CONFIG_VALIDATION_MSGS["operation"]["empty_string"].format(
                             f"{section_name}.folder_exclude_regex"
                         )
                     )
@@ -796,7 +798,7 @@ class ConfigValidator:
             if isinstance(folders, list):
                 if not folders:
                     self.errors.append(
-                        constants.CONFIG_VALIDATION_MSGS["field"]["empty_list"].format(
+                        constants.CONFIG_VALIDATION_MSGS["operation"]["empty_list"].format(
                             f"{section_name}.folder_path_to_include"
                         )
                     )
@@ -830,7 +832,7 @@ class ConfigValidator:
             if isinstance(shortcut_exclude_regex, str):
                 if not shortcut_exclude_regex.strip():
                     self.errors.append(
-                        constants.CONFIG_VALIDATION_MSGS["field"]["empty_value"].format(
+                        constants.CONFIG_VALIDATION_MSGS["operation"]["empty_string"].format(
                             f"{section_name}.shortcut_exclude_regex"
                         )
                     )
@@ -889,26 +891,24 @@ class ConfigValidator:
         for i, item in enumerate(items_list):
             if not isinstance(item, str):
                 self.errors.append(
-                    constants.CONFIG_VALIDATION_MSGS["operation"]["items_list_type"].format(
+                    constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_type"].format(
                         context, i, type(item).__name__
                     )
                 )
             elif not item.strip():
-                self.errors.append(constants.CONFIG_VALIDATION_MSGS["operation"]["items_list_empty"].format(context, i))
+                self.errors.append(constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format(context, i))
 
     def _validate_folders_list(self, folders_list: list, context: str) -> None:
         """Validate a list of folder paths with proper context for error messages."""
         for i, folder in enumerate(folders_list):
             if not isinstance(folder, str):
                 self.errors.append(
-                    constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_type"].format(
+                    constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_type"].format(
                         context, i, type(folder).__name__
                     )
                 )
             elif not folder.strip():
-                self.errors.append(
-                    constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_empty"].format(context, i)
-                )
+                self.errors.append(constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format(context, i))
             elif not folder.startswith("/"):
                 self.errors.append(
                     constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_prefix"].format(context, i, folder)
@@ -948,12 +948,12 @@ class ConfigValidator:
         for i, feature in enumerate(features_list):
             if not isinstance(feature, str):
                 self.errors.append(
-                    constants.CONFIG_VALIDATION_MSGS["operation"]["items_list_type"].format(
+                    constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_type"].format(
                         context, i, type(feature).__name__
                     )
                 )
             elif not feature.strip():
-                self.errors.append(constants.CONFIG_VALIDATION_MSGS["operation"]["items_list_empty"].format(context, i))
+                self.errors.append(constants.CONFIG_VALIDATION_MSGS["operation"]["list_entry_empty"].format(context, i))
 
     def _validate_constants_section(self, constants_section: any) -> None:
         """Validate constants section."""
