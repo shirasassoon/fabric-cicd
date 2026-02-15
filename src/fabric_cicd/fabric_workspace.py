@@ -849,17 +849,6 @@ class FabricWorkspace:
         log_header(logger, "Publishing Workspace Folders")
         logger.info("Publishing Workspace Folders")
         for folder_path in sorted_folders:
-            # Skip folders not in the include list
-            # Ancestor folders must be published to preserve the correct hierarchy
-            # (e.g., if /A/B is included, /A must also be published).
-            if self.publish_folder_path_to_include:
-                is_included = folder_path in self.publish_folder_path_to_include
-                is_ancestor_of_included = any(
-                    included.startswith(folder_path + "/") for included in self.publish_folder_path_to_include
-                )
-                if not is_included and not is_ancestor_of_included:
-                    logger.info(f"Skipping publishing of folder '{folder_path}' as it is not in the include list.")
-                    continue
             # Skip folders matching the exclusion regex
             if self.publish_folder_path_exclude_regex:
                 regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
@@ -881,6 +870,17 @@ class FabricWorkspace:
                     )
                     continue
                 logger.debug(f"Folder path '{folder_path}' does not match the exclusion regex pattern.")
+            # Skip folders not in the include list
+            # Ancestor folders must be published to preserve the correct hierarchy
+            # (e.g., if /A/B is included, /A must also be published).
+            if self.publish_folder_path_to_include:
+                is_included = folder_path in self.publish_folder_path_to_include
+                is_ancestor_of_included = any(
+                    included.startswith(folder_path + "/") for included in self.publish_folder_path_to_include
+                )
+                if not is_included and not is_ancestor_of_included:
+                    logger.info(f"Skipping publishing of folder '{folder_path}' as it is not in the include list.")
+                    continue
             if folder_path in self.deployed_folders:
                 # Folder already deployed, update local hierarchy
                 self.repository_folders[folder_path] = self.deployed_folders[folder_path]

@@ -181,13 +181,19 @@ def publish_all_items(
         raise FailedPublishedItemStatusError(msg, logger)
 
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:
-        if folder_path_exclude_regex:
+        if folder_path_exclude_regex is not None:
             validate_folder_path_exclude_regex(folder_path_exclude_regex)
             fabric_workspace_obj.publish_folder_path_exclude_regex = folder_path_exclude_regex
 
-        if folder_path_to_include:
+        if folder_path_to_include is not None:
             validate_folder_path_to_include(folder_path_to_include)
             fabric_workspace_obj.publish_folder_path_to_include = folder_path_to_include
+
+        if folder_path_exclude_regex is not None and folder_path_to_include is not None:
+            logger.warning(
+                "Both folder_path_exclude_regex and folder_path_to_include are defined. "
+                "Folder exclusion will be applied first, followed by inclusion filtering."
+            )
 
         fabric_workspace_obj._refresh_deployed_folders()
         fabric_workspace_obj._refresh_repository_folders()

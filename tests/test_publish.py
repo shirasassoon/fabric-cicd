@@ -1100,3 +1100,150 @@ def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
                 # Restore original feature flags
                 constants.FEATURE_FLAG.clear()
                 constants.FEATURE_FLAG.update(original_flags)
+
+
+def test_folder_inclusion_and_exclusion_together(mock_endpoint, caplog):
+    """Test that both folder_path_to_include and folder_path_exclude_regex can be used together.
+    Exclusion is applied first, followed by inclusion filtering. A warning is logged."""
+    import logging
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        # Create item in /deploy (included, not excluded)
+        deploy_notebook_dir = temp_path / "deploy" / "DeployNotebook.Notebook"
+        deploy_notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        deploy_platform = deploy_notebook_dir / ".platform"
+        deploy_metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "DeployNotebook",
+                "description": "Notebook in included folder",
+            },
+            "config": {"logicalId": "deploy-notebook-id"},
+        }
+
+        with deploy_platform.open("w", encoding="utf-8") as f:
+            json.dump(deploy_metadata, f)
+
+        with (deploy_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        # Create item in /deploy/legacy (included but excluded by regex)
+        legacy_notebook_dir = temp_path / "deploy" / "legacy" / "LegacyNotebook.Notebook"
+        legacy_notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        legacy_platform = legacy_notebook_dir / ".platform"
+        legacy_metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "LegacyNotebook",
+                "description": "Notebook in excluded subfolder",
+            },
+            "config": {"logicalId": "legacy-notebook-id"},
+        }
+
+        with legacy_platform.open("w", encoding="utf-8") as f:
+            json.dump(legacy_metadata, f)
+
+        with (legacy_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        # Create item in /archive (not included, not excluded)
+        archive_notebook_dir = temp_path / "archive" / "ArchiveNotebook.Notebook"
+        archive_notebook_dir.mkdir(parents=True, exist_ok=True)
+
+        archive_platform = archive_notebook_dir / ".platform"
+        archive_metadata = {
+            "metadata": {
+                "type": "Notebook",
+                "displayName": "ArchiveNotebook",
+                "description": "Notebook in non-included folder",
+            },
+            "config": {"logicalId": "archive-notebook-id"},
+        }
+
+        with archive_platform.open("w", encoding="utf-8") as f:
+            json.dump(archive_metadata, f)
+
+        with (archive_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
+            f.write("Dummy file content")
+
+        with (
+            patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+            patch.object(
+                FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})
+            ),
+            patch.object(
+                FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+            ),
+            caplog.at_level(logging.WARNING),
+        ):
+            original_flags = constants.FEATURE_FLAG.copy()
+            constants.FEATURE_FLAG.add("enable_experimental_features")
+            constants.FEATURE_FLAG.add("enable_include_folder")
+            constants.FEATURE_FLAG.add("enable_exclude_folder")
+
+            try:
+                workspace = FabricWorkspace(
+                    workspace_id="12345678-1234-5678-abcd-1234567890ab",
+                    repository_directory=str(temp_path),
+                    item_type_in_scope=["Notebook"],
+                )
+
+                publish.publish_all_items(
+                    workspace,
+                    folder_path_to_include=["/deploy", "/deploy/legacy"],
+                    folder_path_exclude_regex=r"^/deploy/legacy",
+                )
+
+                # Verify warning was logged about both being defined
+                assert "Both folder_path_exclude_regex and folder_path_to_include are defined" in caplog.text
+
+                # /deploy item is included and not excluded -> published
+                assert workspace.repository_items["Notebook"]["DeployNotebook"].skip_publish is False
+
+                # /deploy/legacy item is excluded by regex (exclusion applied first) -> skipped
+                assert workspace.repository_items["Notebook"]["LegacyNotebook"].skip_publish is True
+
+                # /archive item is not in the include list -> skipped
+                assert workspace.repository_items["Notebook"]["ArchiveNotebook"].skip_publish is True
+
+            finally:
+                constants.FEATURE_FLAG.clear()
+                constants.FEATURE_FLAG.update(original_flags)
+
+
+def test_empty_folder_path_to_include_raises_error(mock_endpoint):
+    """Test that passing an empty list for folder_path_to_include raises an InputError."""
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+
+        with (
+            patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+            patch.object(
+                FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})
+            ),
+            patch.object(
+                FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+            ),
+        ):
+            original_flags = constants.FEATURE_FLAG.copy()
+            constants.FEATURE_FLAG.add("enable_experimental_features")
+            constants.FEATURE_FLAG.add("enable_include_folder")
+
+            try:
+                workspace = FabricWorkspace(
+                    workspace_id="12345678-1234-5678-abcd-1234567890ab",
+                    repository_directory=str(temp_path),
+                    item_type_in_scope=["Notebook"],
+                )
+
+                with pytest.raises(InputError, match="folder_path_to_include must not be an empty list"):
+                    publish.publish_all_items(workspace, folder_path_to_include=[])
+
+            finally:
+                constants.FEATURE_FLAG.clear()
+                constants.FEATURE_FLAG.update(original_flags)

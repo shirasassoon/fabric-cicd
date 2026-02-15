@@ -227,6 +227,14 @@ def validate_folder_path_exclude_regex(folder_path_exclude_regex: Optional[str])
         risk_warning="Using folder_path_exclude_regex is risky as it can prevent needed dependencies from being deployed.  Use at your own risk.",
     )
 
+    if not isinstance(folder_path_exclude_regex, str):
+        msg = "folder_path_exclude_regex must be a string."
+        raise InputError(msg, logger)
+
+    if folder_path_exclude_regex == "":
+        msg = "folder_path_exclude_regex must not be an empty string. Provide a valid regex pattern or omit the parameter."
+        raise InputError(msg, logger)
+
 
 def validate_folder_path_to_include(folder_path_to_include: Optional[list[str]]) -> None:
     """
@@ -244,6 +252,14 @@ def validate_folder_path_to_include(folder_path_to_include: Optional[list[str]])
         warning_message="Folder path inclusion is enabled.",
         risk_warning="Using folder_path_to_include is risky as it can prevent needed dependencies from being deployed.  Use at your own risk.",
     )
+
+    if not isinstance(folder_path_to_include, list):
+        msg = "folder_path_to_include must be a list of folder paths."
+        raise InputError(msg, logger)
+
+    if not folder_path_to_include:
+        msg = "folder_path_to_include must not be an empty list. Provide folder paths or omit the parameter."
+        raise InputError(msg, logger)
 
 
 def validate_shortcut_exclude_regex(shortcut_exclude_regex: Optional[str]) -> None:
