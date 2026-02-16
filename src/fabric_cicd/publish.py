@@ -18,7 +18,7 @@ from fabric_cicd._common._config_utils import (
     extract_workspace_settings,
     load_config_file,
 )
-from fabric_cicd._common._exceptions import FailedPublishedItemStatusError
+from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError
 from fabric_cicd._common._logging import log_header
 from fabric_cicd._common._validate_input import (
     validate_environment,
@@ -58,13 +58,15 @@ def publish_all_items(
 
     folder_path_exclude_regex:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
-        not recommended due to item dependencies. To enable this feature, see How To -> Optional Features
-        for information on which flags to enable.
+        not recommended due to item dependencies. Cannot be used together with ``folder_path_to_include``
+        for the same environment. To enable this feature, see How To -> Optional Features for information
+        on which flags to enable.
 
     folder_path_to_include:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
-        not recommended due to item dependencies. To enable this feature, see How To -> Optional Features
-        for information on which flags to enable.
+        not recommended due to item dependencies. Cannot be used together with ``folder_path_exclude_regex``
+        for the same environment. To enable this feature, see How To -> Optional Features for information
+        on which flags to enable.
 
     items_to_include:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
@@ -181,6 +183,10 @@ def publish_all_items(
         raise FailedPublishedItemStatusError(msg, logger)
 
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:
+        if folder_path_exclude_regex is not None and folder_path_to_include is not None:
+            msg = "Cannot use both 'folder_path_exclude_regex' and 'folder_path_to_include' simultaneously. Choose one filtering strategy."
+            raise InputError(msg, logger)
+
         if folder_path_exclude_regex is not None:
             validate_folder_path_exclude_regex(folder_path_exclude_regex)
             fabric_workspace_obj.publish_folder_path_exclude_regex = folder_path_exclude_regex
@@ -188,12 +194,6 @@ def publish_all_items(
         if folder_path_to_include is not None:
             validate_folder_path_to_include(folder_path_to_include)
             fabric_workspace_obj.publish_folder_path_to_include = folder_path_to_include
-
-        if folder_path_exclude_regex is not None and folder_path_to_include is not None:
-            logger.warning(
-                "Both folder_path_exclude_regex and folder_path_to_include are defined. "
-                "Folder exclusion will be applied first, followed by inclusion filtering."
-            )
 
         fabric_workspace_obj._refresh_deployed_folders()
         fabric_workspace_obj._refresh_repository_folders()

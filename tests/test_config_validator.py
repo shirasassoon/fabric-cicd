@@ -1952,6 +1952,117 @@ class TestOperationSectionValidation:
 
         assert self.validator.errors == []
 
+    def test_validate_operation_section_mutually_exclusive_both_direct_values(self):
+        """Test that both folder_exclude_regex and folder_path_to_include as direct values raises error."""
+        section = {"folder_exclude_regex": "^/legacy", "folder_path_to_include": ["/subfolder"]}
+
+        self.validator._validate_operation_section(section, "publish")
+
+        error_messages = " ".join(self.validator.errors)
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["mutually_exclusive"].format(
+                "publish.folder_exclude_regex", "publish.folder_path_to_include"
+            )
+            in error_messages
+        )
+
+    def test_validate_operation_section_mutually_exclusive_both_env_mapped_overlapping(self):
+        """Test that both fields with overlapping environment mappings raises error."""
+        self.validator.environment = "dev"
+        section = {
+            "folder_exclude_regex": {"dev": "^/legacy"},
+            "folder_path_to_include": {"dev": ["/subfolder"]},
+        }
+
+        self.validator._validate_operation_section(section, "publish")
+
+        error_messages = " ".join(self.validator.errors)
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["mutually_exclusive_env"].format(
+                "publish.folder_exclude_regex", "publish.folder_path_to_include", ["dev"]
+            )
+            in error_messages
+        )
+
+    def test_validate_operation_section_mutually_exclusive_both_env_mapped_no_overlap(self):
+        """Test that both fields with non-overlapping environment mappings is valid."""
+        self.validator.environment = "dev"
+        section = {
+            "folder_exclude_regex": {"dev": "^/legacy"},
+            "folder_path_to_include": {"prod": ["/subfolder"]},
+        }
+
+        self.validator._validate_operation_section(section, "publish")
+
+        # Filter errors to only mutual exclusivity errors
+        mutual_errors = [
+            e for e in self.validator.errors if "mutually exclusive" in e.lower() or "Cannot specify both" in e
+        ]
+        assert len(mutual_errors) == 0
+
+    def test_validate_operation_section_mutually_exclusive_direct_and_env_mapped_conflict(self):
+        """Test that direct value + env-mapped value conflicts when target env matches."""
+        self.validator.environment = "dev"
+        section = {
+            "folder_exclude_regex": "^/legacy",  # direct, applies to all
+            "folder_path_to_include": {"dev": ["/subfolder"]},  # env-mapped, applies to dev
+        }
+
+        self.validator._validate_operation_section(section, "publish")
+
+        error_messages = " ".join(self.validator.errors)
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["mutually_exclusive_env"].format(
+                "publish.folder_exclude_regex", "publish.folder_path_to_include", ["dev"]
+            )
+            in error_messages
+        )
+
+    def test_validate_operation_section_mutually_exclusive_direct_and_env_mapped_no_conflict(self):
+        """Test that direct value + env-mapped value is valid when target env doesn't match."""
+        self.validator.environment = "prod"
+        section = {
+            "folder_exclude_regex": "^/legacy",  # direct, applies to all
+            "folder_path_to_include": {"dev": ["/subfolder"]},  # env-mapped, only dev
+        }
+
+        self.validator._validate_operation_section(section, "publish")
+
+        # The direct value applies to prod, but folder_path_to_include doesn't apply to prod
+        mutual_errors = [
+            e for e in self.validator.errors if "mutually exclusive" in e.lower() or "Cannot specify both" in e
+        ]
+        assert len(mutual_errors) == 0
+
+    def test_validate_operation_section_mutually_exclusive_env_mapped_and_direct_conflict(self):
+        """Test that env-mapped value + direct value conflicts when target env matches."""
+        self.validator.environment = "dev"
+        section = {
+            "folder_exclude_regex": {"dev": "^/legacy"},  # env-mapped, applies to dev
+            "folder_path_to_include": ["/subfolder"],  # direct, applies to all
+        }
+
+        self.validator._validate_operation_section(section, "publish")
+
+        error_messages = " ".join(self.validator.errors)
+        assert (
+            constants.CONFIG_VALIDATION_MSGS["operation"]["mutually_exclusive_env"].format(
+                "publish.folder_exclude_regex", "publish.folder_path_to_include", ["dev"]
+            )
+            in error_messages
+        )
+
+    def test_validate_operation_section_mutually_exclusive_only_one_field_present(self):
+        """Test that having only one of the mutually exclusive fields is valid."""
+        section = {"folder_exclude_regex": "^/legacy"}
+
+        self.validator._validate_operation_section(section, "publish")
+
+        mutual_errors = [
+            e for e in self.validator.errors if "mutually exclusive" in e.lower() or "Cannot specify both" in e
+        ]
+        assert len(mutual_errors) == 0
+
 
 class TestFeaturesSectionValidation:
     """Tests for features section validation."""

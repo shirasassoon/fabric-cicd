@@ -416,6 +416,8 @@ CONFIG_VALIDATION_MSGS = {
         "invalid_constant_key": "Constant key in '{}' must be a non-empty string, got: {}",
         "unknown_constant": "Unknown constant '{}' in '{}' - this constant does not exist in fabric_cicd.constants",
         "folders_list_prefix": "'{}[{}]' entry must start with '/' (got '{}')",
+        "mutually_exclusive": "Cannot specify both '{}' and '{}'. Choose one filtering strategy.",
+        "mutually_exclusive_env": "Cannot specify both '{}' and '{}' for the same environment(s): {}. Choose one filtering strategy per environment.",
     },
     # Log messages
     "log": {

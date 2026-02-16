@@ -1102,15 +1102,13 @@ def test_folder_inclusion_with_folder_path_to_include(mock_endpoint):
                 constants.FEATURE_FLAG.update(original_flags)
 
 
-def test_folder_inclusion_and_exclusion_together(mock_endpoint, caplog):
-    """Test that both folder_path_to_include and folder_path_exclude_regex can be used together.
-    Exclusion is applied first, followed by inclusion filtering. A warning is logged."""
-    import logging
+def test_folder_inclusion_and_exclusion_together(mock_endpoint):
+    """Test that using both folder_path_to_include and folder_path_exclude_regex raises InputError."""
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
 
-        # Create item in /deploy (included, not excluded)
+        # Create a minimal item so the workspace can be initialized
         deploy_notebook_dir = temp_path / "deploy" / "DeployNotebook.Notebook"
         deploy_notebook_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1130,46 +1128,6 @@ def test_folder_inclusion_and_exclusion_together(mock_endpoint, caplog):
         with (deploy_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
             f.write("Dummy file content")
 
-        # Create item in /deploy/legacy (included but excluded by regex)
-        legacy_notebook_dir = temp_path / "deploy" / "legacy" / "LegacyNotebook.Notebook"
-        legacy_notebook_dir.mkdir(parents=True, exist_ok=True)
-
-        legacy_platform = legacy_notebook_dir / ".platform"
-        legacy_metadata = {
-            "metadata": {
-                "type": "Notebook",
-                "displayName": "LegacyNotebook",
-                "description": "Notebook in excluded subfolder",
-            },
-            "config": {"logicalId": "legacy-notebook-id"},
-        }
-
-        with legacy_platform.open("w", encoding="utf-8") as f:
-            json.dump(legacy_metadata, f)
-
-        with (legacy_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
-            f.write("Dummy file content")
-
-        # Create item in /archive (not included, not excluded)
-        archive_notebook_dir = temp_path / "archive" / "ArchiveNotebook.Notebook"
-        archive_notebook_dir.mkdir(parents=True, exist_ok=True)
-
-        archive_platform = archive_notebook_dir / ".platform"
-        archive_metadata = {
-            "metadata": {
-                "type": "Notebook",
-                "displayName": "ArchiveNotebook",
-                "description": "Notebook in non-included folder",
-            },
-            "config": {"logicalId": "archive-notebook-id"},
-        }
-
-        with archive_platform.open("w", encoding="utf-8") as f:
-            json.dump(archive_metadata, f)
-
-        with (archive_notebook_dir / "dummy.txt").open("w", encoding="utf-8") as f:
-            f.write("Dummy file content")
-
         with (
             patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
             patch.object(
@@ -1178,7 +1136,6 @@ def test_folder_inclusion_and_exclusion_together(mock_endpoint, caplog):
             patch.object(
                 FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
             ),
-            caplog.at_level(logging.WARNING),
         ):
             original_flags = constants.FEATURE_FLAG.copy()
             constants.FEATURE_FLAG.add("enable_experimental_features")
@@ -1192,23 +1149,15 @@ def test_folder_inclusion_and_exclusion_together(mock_endpoint, caplog):
                     item_type_in_scope=["Notebook"],
                 )
 
-                publish.publish_all_items(
-                    workspace,
-                    folder_path_to_include=["/deploy", "/deploy/legacy"],
-                    folder_path_exclude_regex=r"^/deploy/legacy",
-                )
-
-                # Verify warning was logged about both being defined
-                assert "Both folder_path_exclude_regex and folder_path_to_include are defined" in caplog.text
-
-                # /deploy item is included and not excluded -> published
-                assert workspace.repository_items["Notebook"]["DeployNotebook"].skip_publish is False
-
-                # /deploy/legacy item is excluded by regex (exclusion applied first) -> skipped
-                assert workspace.repository_items["Notebook"]["LegacyNotebook"].skip_publish is True
-
-                # /archive item is not in the include list -> skipped
-                assert workspace.repository_items["Notebook"]["ArchiveNotebook"].skip_publish is True
+                with pytest.raises(
+                    InputError,
+                    match="Cannot use both 'folder_path_exclude_regex' and 'folder_path_to_include'",
+                ):
+                    publish.publish_all_items(
+                        workspace,
+                        folder_path_to_include=["/deploy"],
+                        folder_path_exclude_regex=r"^/deploy/legacy",
+                    )
 
             finally:
                 constants.FEATURE_FLAG.clear()

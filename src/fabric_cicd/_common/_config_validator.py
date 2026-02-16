@@ -877,6 +877,11 @@ class ConfigValidator:
                     .replace("a string", "a boolean")
                 )
 
+        # Validate mutual exclusivity of folder filtering options
+        self._validate_mutually_exclusive_fields(
+            section, "folder_exclude_regex", "folder_path_to_include", section_name
+        )
+
     def _validate_regex(self, regex: str, section_name: str) -> None:
         """Validate regex value."""
         try:
@@ -913,6 +918,44 @@ class ConfigValidator:
                 self.errors.append(
                     constants.CONFIG_VALIDATION_MSGS["operation"]["folders_list_prefix"].format(context, i, folder)
                 )
+
+    def _validate_mutually_exclusive_fields(self, section: dict, field1: str, field2: str, section_name: str) -> None:
+        """Validate that two fields are not both specified for the same environment."""
+        if field1 not in section or field2 not in section:
+            return
+
+        value1 = section[field1]
+        value2 = section[field2]
+
+        # Both are direct values (not environment-specific), throw error
+        if not isinstance(value1, dict) and not isinstance(value2, dict):
+            self.errors.append(
+                constants.CONFIG_VALIDATION_MSGS["operation"]["mutually_exclusive"].format(
+                    f"{section_name}.{field1}", f"{section_name}.{field2}"
+                )
+            )
+            return
+
+        # Determine which environments each field contains (if they are environment mappings)
+        value1_envs = set(value1.keys()) if isinstance(value1, dict) else set()
+        value2_envs = set(value2.keys()) if isinstance(value2, dict) else set()
+
+        # Determine if it is a direct value
+        value1_is_direct = not isinstance(value1, dict)
+        value2_is_direct = not isinstance(value2, dict)
+
+        # Check if both fields would resolve for the target environment
+        value1_applies = value1_is_direct or self.environment in value1_envs
+        value2_applies = value2_is_direct or self.environment in value2_envs
+
+        if value1_applies and value2_applies:
+            self.errors.append(
+                constants.CONFIG_VALIDATION_MSGS["operation"]["mutually_exclusive_env"].format(
+                    f"{section_name}.{field1}",
+                    f"{section_name}.{field2}",
+                    [self.environment],
+                )
+            )
 
     def _validate_features_section(self, features: any) -> None:
         """Validate features section."""
