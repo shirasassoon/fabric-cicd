@@ -599,7 +599,13 @@ class FabricWorkspace:
             if folder_path:
                 if self.publish_folder_path_exclude_regex:
                     regex_pattern = check_regex(self.publish_folder_path_exclude_regex)
-                    # Check if the folder path itself or any ancestor matches the exclusion regex
+                    # Walk up the folder hierarchy checking each level against the exclusion regex.
+                    # Cases handled:
+                    #   1. Direct match — item's folder matches the regex (e.g., item in /A/B, regex matches /A/B)
+                    #   2. Ancestor match — item's ancestor folder matches (e.g., item in /A/B/C, regex matches /A)
+                    #   3. No match at any level — no exclusion applied, continue to next checks
+                    # Note: Root-level items (empty folder_path) bypass this block entirely via the guard above.
+                    # This ensures excluding a parent folder cascades to all descendants.
                     path_to_check = folder_path
                     while path_to_check:
                         # If the current path (or ancestor) matches the exclusion pattern, skip this item
@@ -616,6 +622,12 @@ class FabricWorkspace:
                             # Reached the root level with no match; stop checking
                             break
 
+                # If the item's folder is not in the explicit include list, skip item publish (even though folder has been created).
+                # Note: unlike exclusion, this does NOT walk ancestors — only exact folder match is checked.
+
+                # Skip if the item's folder is not explicitly in the include list.
+                # Unlike exclusion, this checks exact path only — ancestors are not considered.
+                # (e.g., including /A does NOT include items in /A/B, or includiing /A/B does NOT include items in /A, but the folder /A will still exist).
                 if self.publish_folder_path_to_include and folder_path not in self.publish_folder_path_to_include:
                     item.skip_publish = True
                     logger.info(
@@ -874,8 +886,8 @@ class FabricWorkspace:
                     continue
                 logger.debug(f"Folder path '{folder_path}' does not match the exclusion regex pattern.")
             # Skip folders not in the include list
-            # Ancestor folders must be published to preserve the correct hierarchy
-            # (e.g., if /A/B is included, /A must also be published).
+            # Ancestor folders must be published to preserve the correct hierarchy.
+            # Even though they may not be explicitly included, (e.g., if /A/B is included, /A must also be published).
             if self.publish_folder_path_to_include:
                 is_included = folder_path in self.publish_folder_path_to_include
                 is_ancestor_of_included = any(
