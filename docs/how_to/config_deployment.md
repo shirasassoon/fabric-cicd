@@ -133,7 +133,7 @@ publish:
     folder_path_to_include:
         - </subfolder_1>
         - </subfolder_2>
-        - </subfolder_2/subfolder_3>
+        - </subfolder_2/subfolder_3> # publish items found in nested folder - subfolder_3
 
     # Optional - specific items to publish (requires feature flags)
     items_to_include:

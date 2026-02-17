@@ -381,7 +381,7 @@ CONFIG_VALIDATION_MSGS = {
     # Field validation
     "field": {
         "string_or_dict": "'{}' must be either a string or environment mapping dictionary (e.g., {{dev: 'dev_value', prod: 'prod_value'}}), got type {}",
-        "list_or_dict": "'{}' must be a list or environment mapping dictionary (e.g., {{dev: ['dev_value1', 'dev_value2'], prod: ['prod_value']}}), got type {}",
+        "list_or_dict": "'{}' must be either a list or environment mapping dictionary (e.g., {{dev: ['dev_value1', 'dev_value2'], prod: ['prod_value']}}), got type {}",
         "empty_value": "'{}' cannot be empty",
         "empty_list": "'{}' cannot be empty if specified",
         "invalid_guid": "'{}' must be a valid GUID format: {}",

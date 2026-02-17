@@ -602,15 +602,18 @@ class FabricWorkspace:
                     # Check if the folder path itself or any ancestor matches the exclusion regex
                     path_to_check = folder_path
                     while path_to_check:
+                        # If the current path (or ancestor) matches the exclusion pattern, skip this item
                         if regex_pattern.search(path_to_check):
                             item.skip_publish = True
                             logger.info(
                                 f"Skipping publishing of {item_type} '{item_name}' due to folder path exclusion regex."
                             )
                             return
+                        # Move one level up by stripping the last path segment (e.g., "/a/b/c" -> "/a/b")
                         if "/" in path_to_check and path_to_check != "":
                             path_to_check = path_to_check.rsplit("/", 1)[0]
                         else:
+                            # Reached the root level with no match; stop checking
                             break
 
                 if self.publish_folder_path_to_include and folder_path not in self.publish_folder_path_to_include:
