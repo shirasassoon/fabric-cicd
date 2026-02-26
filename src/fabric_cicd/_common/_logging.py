@@ -9,8 +9,9 @@ import re
 import sys
 import traceback
 from logging import LogRecord
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Optional
 
 from fabric_cicd import constants
 from fabric_cicd._common import _exceptions
@@ -58,27 +59,70 @@ class CustomFormatter(logging.Formatter):
         return full_message
 
 
-def configure_logger(level: int = logging.INFO) -> None:
+def configure_logger(
+    level: int = logging.INFO,
+    file_path: Optional[str] = None,
+    rotate_on: bool = False,
+    suppress_debug_console: bool = False,
+    debug_only_file: bool = False,
+    disable_log_file: bool = False,
+) -> None:
     """
     Configure the logger.
 
     Args:
         level: The log level to set. Must be one of the standard logging levels.
+        file_path: Path to log file (optional).
+        rotate_on: Use RotatingFileHandler with size-based rotation.
+        suppress_debug_console: Suppress DEBUG output to console (only applies when level is DEBUG).
+        debug_only_file: Only write DEBUG messages to file (only applies when level is DEBUG).
+        disable_log_file: Disable file logging entirely.
     """
-    # Configure default logging
-    logging.basicConfig(
-        level=(
-            # For non-fabric_cicd packages: INFO if DEBUG, else ERROR
-            logging.INFO if level == logging.DEBUG else logging.ERROR
-        ),
-        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
-        filename="fabric_cicd.error.log",
-        filemode="w",
-    )
+    # For non-fabric_cicd packages: INFO if DEBUG, else ERROR
+    root_level = logging.INFO if level == logging.DEBUG else logging.ERROR
+    root_logger = logging.getLogger()
+    root_logger.setLevel(root_level)
+
+    # Clear existing handlers to prevent duplicate logging
+    root_logger.handlers = []
+
+    # Configure file handler unless disabled
+    if not disable_log_file:
+        if rotate_on and file_path:
+            # Configure rotating file handler for append mode with size-based rotation
+            file_handler = RotatingFileHandler(
+                file_path,
+                maxBytes=5 * 1024 * 1024,  # 5 MB
+                backupCount=7,  # Retain 7 rotated files (35 MB total)
+            )
+            file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
+        else:
+            # Configure explicit file handler with delay and package filter
+            file_handler = logging.FileHandler(
+                "fabric_cicd.error.log",
+                mode="w",
+                delay=True,  # Delay file creation until first log
+            )
+            file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s"))
+
+        # Capture only DEBUG messages in log file when DEBUG level is set
+        if debug_only_file and level == logging.DEBUG:
+            file_handler.setLevel(logging.DEBUG)
+            file_handler.addFilter(lambda record: record.levelno == logging.DEBUG)
+
+        # Filter to only accept fabric_cicd logs
+        file_handler.addFilter(lambda record: record.name.startswith("fabric_cicd"))
+
+        root_logger.addHandler(file_handler)
+
+    # Determine console level
+    console_level = level
+    if suppress_debug_console and level == logging.DEBUG:
+        console_level = logging.INFO
 
     # Configure Console Handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(level)
+    console_handler.setLevel(console_level)
     console_handler.setFormatter(
         CustomFormatter(
             "[%(levelname)s] %(asctime)s - %(message)s",
@@ -94,7 +138,7 @@ def configure_logger(level: int = logging.INFO) -> None:
 
     # Create a logger that only writes to the console
     console_only_logger = logging.getLogger("console_only")
-    console_only_logger.setLevel(level)
+    console_only_logger.setLevel(console_level)
     console_only_logger.handlers = []
     console_only_logger.addHandler(console_handler)
     console_only_logger.propagate = False  # Prevent logs from being propagated to other loggers
@@ -117,15 +161,24 @@ def exception_handler(exception_type: type[BaseException], exception: BaseExcept
         # Log the exception using the logger associated with the exception
         original_logger = exception.logger
 
-        # Write only the exception message to the console
-        logging.getLogger("console_only").error(
-            f"{exception!s}\n\nSee {Path('fabric_cicd.error.log').resolve()} for full details."
+        # Check if file logging is enabled by looking for file handlers
+        root_logger = logging.getLogger()
+        file_handler = next(
+            (h for h in root_logger.handlers if isinstance(h, (logging.FileHandler, RotatingFileHandler))),
+            None,
         )
+
+        # Write only the exception message to the console
+        # Skip file reference for RotatingFileHandler since it only contains DEBUG logs
+        if file_handler is not None and not isinstance(file_handler, RotatingFileHandler):
+            log_file_path = Path(file_handler.baseFilename).resolve()
+            logging.getLogger("console_only").error(f"{exception!s}\n\nSee {log_file_path} for full details.")
+        else:
+            logging.getLogger("console_only").error(f"{exception!s}")
 
         # Write exception and full stack trace to logs but not terminal
         package_logger = logging.getLogger("fabric_cicd")
 
-        # Clear any existing handlers to prevent writing to console
         additional_info = getattr(exception, "additional_info", None)
         additional_info = "\n\nAdditional Info: \n" + additional_info if additional_info is not None else ""
 

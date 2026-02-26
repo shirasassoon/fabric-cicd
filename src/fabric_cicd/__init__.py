@@ -9,7 +9,7 @@ import sys
 import fabric_cicd.constants as constants
 from fabric_cicd._common._check_utils import check_version
 from fabric_cicd._common._logging import configure_logger, exception_handler
-from fabric_cicd.constants import FeatureFlag, ItemType
+from fabric_cicd._common._validate_input import validate_log_file_path
 from fabric_cicd.fabric_workspace import FabricWorkspace
 from fabric_cicd.publish import deploy_with_config, publish_all_items, unpublish_all_orphan_items
 
@@ -50,6 +50,42 @@ def change_log_level(level: str = "DEBUG") -> None:
         logger.warning(f"Log level '{level}' not supported.  Only DEBUG is supported at this time. No changes made.")
 
 
+def configure_logger_with_rotation(file_path: str) -> None:
+    """
+    Configure fabric_cicd logging with file rotation (size-based).
+
+    Args:
+        file_path: The path to the log file in which rotation will be applied.
+
+    Examples:
+        Custom log file with size-based rotation (default is append mode)
+        >>> from fabric_cicd import configure_logger_with_rotation
+        >>> configure_logger_with_rotation(
+        ...     file_path="C:/my_app/logs/fabric.log",
+        ... )
+    """
+    configure_logger(
+        level=logging.DEBUG,
+        file_path=validate_log_file_path(file_path),
+        rotate_on=True,
+        suppress_debug_console=True,
+        debug_only_file=True,
+    )
+
+
+def disable_file_logging() -> None:
+    """
+    Disable file logging for the fabric_cicd package. No log file will be created.
+    INFO and above logs will be output to the console (DEBUG logs excluded).
+
+    Examples:
+        Basic usage
+        >>> from fabric_cicd import disable_file_logging
+        >>> disable_file_logging()
+    """
+    configure_logger(disable_log_file=True)
+
+
 configure_logger()
 sys.excepthook = exception_handler
 
@@ -61,7 +97,9 @@ __all__ = [
     "ItemType",
     "append_feature_flag",
     "change_log_level",
+    "configure_logger_with_rotation",
     "deploy_with_config",
+    "disable_file_logging",
     "publish_all_items",
     "unpublish_all_orphan_items",
 ]

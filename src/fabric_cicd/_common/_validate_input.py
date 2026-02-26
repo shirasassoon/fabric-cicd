@@ -135,6 +135,18 @@ def validate_environment(input_value: str) -> str:
     return input_value
 
 
+def validate_log_file_path(input_value: str) -> str:
+    """
+    Validate the log file path.
+
+    Args:
+        input_value: The input value to validate.
+    """
+    validate_data_type("string", "file_path", input_value)
+
+    return input_value
+
+
 def validate_fabric_workspace_obj(input_value: FabricWorkspace) -> FabricWorkspace:
     """
     Validate the FabricWorkspace object.
