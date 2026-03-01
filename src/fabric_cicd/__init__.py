@@ -54,6 +54,10 @@ def configure_logger_with_rotation(file_path: str) -> None:
     """
     Configure fabric_cicd logging with file rotation (size-based).
 
+    This function only writes DEBUG logs to a rotating log file while keeping
+    console output at INFO level. The log file rotates at 5 MB, retaining
+    up to 7 backup files (35 MB total).
+
     Args:
         file_path: The path to the log file in which rotation will be applied.
 

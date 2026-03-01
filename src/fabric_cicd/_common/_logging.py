@@ -112,7 +112,6 @@ def configure_logger(
 
         # Filter to only accept fabric_cicd logs
         file_handler.addFilter(lambda record: record.name.startswith("fabric_cicd"))
-
         root_logger.addHandler(file_handler)
 
     # Determine console level
