@@ -75,8 +75,15 @@ def configure_logger_with_rotation(file_path: str) -> None:
 
 def disable_file_logging() -> None:
     """
-    Disable file logging for the fabric_cicd package. No log file will be created.
-    INFO and above logs will be output to the console (DEBUG logs excluded).
+    Disable file logging for the fabric_cicd package.
+
+    This function is only applicable when logging is at the default INFO level.
+    When called, no log file will be created for INFO-level logging.
+    Console logging will still occur for INFO-level messages.
+
+    Note:
+        This does not affect DEBUG-level file logging configured via
+        `change_log_level` or `configure_logger_with_rotation`.
 
     Examples:
         Basic usage

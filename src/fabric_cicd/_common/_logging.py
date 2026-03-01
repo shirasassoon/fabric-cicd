@@ -97,7 +97,7 @@ def configure_logger(
             )
             file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(message)s"))
         else:
-            # Configure explicit file handler with delay and package filter
+            # Configure default logging (explicit file handler with delay and package filter)
             file_handler = logging.FileHandler(
                 "fabric_cicd.error.log",
                 mode="w",
