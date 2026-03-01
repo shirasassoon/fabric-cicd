@@ -4,7 +4,7 @@
 
 Configuration-based deployment provides an alternative way to manage the deployment of Fabric items across multiple environments. Instead of using the traditional approach of defining a workspace object with various parameters and then running the publish/unpublish functions, this approach centralizes all deployment settings in a single YAML configuration file and simplifies the deployment into one function call.
 
-Configuration file location (supports any location in git repository):
+Configuration file location (supports any location in the Git repository):
 
 ```
 C:/dev/workspace
@@ -22,7 +22,7 @@ from fabric_cicd import deploy_with_config
 
 # Deploy using a config file
 deploy_with_config(
-    config_file_path="C:/dev/workspace/config.yml", # required
+    config_file_path="C:/dev/workspace/config.yml",  # required
     environment="dev"
 )
 ```
@@ -33,11 +33,11 @@ Raise a [feature request](https://github.com/microsoft/fabric-cicd/issues/new?te
 
 The configuration file includes several sections with configurable settings for different aspects of the deployment process.
 
-**Note**: Configuration values can be specified in two ways: as a single value (applied to any target environment provided) or as an environment mapping. Both approaches can be used within the same configuration file - for example, using environment mappings for workspace IDs while keeping a single value for repository directory.
+**Note:** Configuration values can be specified in two ways: as a single value (applied to any target environment provided) or as an environment mapping. Both approaches can be used within the same configuration file — for example, using environment mappings for workspace IDs while keeping a single value for repository directory.
 
 ### Core Settings
 
-The `core` section is **required** as it defines the fundamental settings for the deployment, most importantly the **target workspace** and **repository directory**. Other optional settings can be configured within the `core` section, which include **item types in scope** and **parameter**.
+The `core` section is **required** as it defines the fundamental settings for the deployment, most importantly the **target workspace** and **repository directory**. Other optional settings can be configured within the `core` section, including **item types in scope** and **parameter**.
 
 ```yaml
 core:
@@ -94,26 +94,26 @@ core:
 
 <span class="md-h4-nonanchor">Required Fields:</span>
 
-- Workspace Identifier:
+- **Workspace Identifier:**
     - Workspace ID takes precedence over workspace name when both are provided.
     - `workspace_id` must be a valid string GUID.
-- Repository Directory Path:
+- **Repository Directory Path:**
     - Supports relative or absolute path.
     - Relative path must be relative to the `config.yml` file location.
 
 <span class="md-h4-nonanchor">Optional Fields:</span>
 
-- Item Types in Scope:
+- **Item Types in Scope:**
     - If `item_types_in_scope` is not specified, all item types will be included by default.
-    - Item types must be provided as a list, use `-` or `[]` notation.
+    - Item types must be provided as a list; use `-` or `[]` notation.
     - Only accepts supported item types.
-- Parameter Path:
+- **Parameter Path:**
     - Supports relative or absolute path.
     - Relative path must be relative to the `config.yml` file location.
 
 ### Publish Settings
 
-`publish` is optional and can be used to control item publishing behavior. It includes various optional settings to enable/disable publishing operations or selectively publish items.
+The `publish` section is optional and controls item publishing behavior. If this section is omitted entirely, publishing will run with **default behavior — all items published, no exclusions.** It includes various optional settings to enable/disable publishing operations or selectively publish items.
 
 **Note:** Folder-level filtering only applies to items within a Fabric folder. Folder paths must start with `/` (e.g., `/folder_name` or `/folder_name/nested_folder`). `folder_exclude_regex` and `folder_path_to_include` are **mutually exclusive** — providing both for the same environment will result in a validation error.
 
@@ -123,7 +123,7 @@ When using `folder_path_to_include` with nested paths (e.g., `/subfolder1/subfol
 
 ```yaml
 publish:
-    # Optional - pattern to exclude items from publishing
+    # Optional - pattern to exclude items from publishing (no feature flag required)
     exclude_regex: <regex_pattern_string>
 
     # Optional - pattern to exclude specific folder paths with items from publishing (requires feature flags)
@@ -178,7 +178,7 @@ publish:
             - <item_name.item_type_1>
             - <item_name.item_type..>
 
-    # Optional - pattern to exclude Lakehouse Shortcuts from publishing (requires feature flags)
+    # Optional - pattern to exclude Lakehouse shortcuts from publishing (requires feature flags)
     shortcut_exclude_regex:
         <env_1>: <regex_pattern_string_1>
         <env..>: <regex_pattern_string..>
@@ -191,11 +191,11 @@ publish:
 
 ### Unpublish Settings
 
-`unpublish` is optional and can be used to control item unpublishing behavior. It includes various optional settings to enable/disable unpublishing or selectively unpublish items.
+The `unpublish` section is optional and controls item unpublishing behavior. If this section is omitted entirely, unpublishing will run with **default behavior — all orphan items unpublished, no exclusions.** It includes various optional settings to enable/disable unpublishing or selectively unpublish items.
 
 ```yaml
 unpublish:
-    # Optional - pattern to exclude items from unpublishing
+    # Optional - pattern to exclude items from unpublishing (no feature flag required)
     exclude_regex: <regex_pattern_string>
 
     # Optional - specific items to unpublish (requires feature flags)
@@ -231,11 +231,11 @@ unpublish:
         <env..>: <bool_value>
 ```
 
-**Warning:** While selective deployment is supported in `fabric-cicd` it is not recommended due to potential issues with dependency management.
+**Warning:** While selective deployment is supported in fabric-cicd, it is not recommended due to potential issues with dependency management.
 
 ### Features Setting
 
-`features` is optional and can be used to set a list of specific feature flags.
+The `features` section is optional and allows you to set a list of specific feature flags.
 
 ```yaml
 features:
@@ -257,14 +257,14 @@ features:
 
 ### Constants Setting
 
-`constants` is optional and can be used to override supported library constants.
+The `constants` section is optional and allows you to override supported library constants.
 
 ```yaml
 constants:
     CONSTANT_NAME: <constant_value>
 ```
 
-With environment mapping:
+<span class="md-h4-nonanchor">With environment mapping:</span>
 
 ```yaml
 constants:
@@ -288,6 +288,8 @@ core:
 ### Required vs Optional Fields
 
 Fields are categorized as **required** or **optional**, which affects how missing environment values are handled when environment is passed into `deploy_with_config()`:
+
+**Note:** When the `publish` or `unpublish` sections are omitted entirely, both operations run by default. To skip either operation, explicitly set `skip: true` for that section.
 
 | Field                                   | Required | Environment Missing Behavior    |
 | --------------------------------------- | -------- | ------------------------------- |
@@ -344,7 +346,7 @@ When an optional field uses environment mapping and does not include the target 
 - **Important optional fields** (`item_types_in_scope`, `parameter`): A **warning** is logged to alert users that the setting is being skipped.
 - **Other optional fields**: A **debug** message is logged, visible only when debug logging is enabled.
 
-Example log output when deploying to `prod` with the config above:
+Example log output when deploying to `prod` with the configuration above:
 
 ```
 [Debug] - No value for 'folder_exclude_regex' in environment 'prod'. Available environments: ['dev']. This setting will be skipped.
@@ -353,6 +355,7 @@ Example log output when deploying to `prod` with the config above:
 To enable debug logging:
 
 ```python
+from fabric_cicd import change_log_level
 change_log_level()
 ```
 
@@ -381,7 +384,7 @@ core:
     parameter: "parameter.yml" # relative path
 
 publish:
-    # Don't publish items matching this pattern
+    # Don't publish items matching this pattern (no feature flag required)
     exclude_regex: "^DONT_DEPLOY.*"
 
     # Use folder_exclude_regex OR folder_path_to_include, not both for the same environment
@@ -406,7 +409,7 @@ publish:
         prod: false
 
 unpublish:
-    # Don't unpublish items matching this pattern
+    # Don't unpublish items matching this pattern (no feature flag required)
     exclude_regex: "^DEBUG.*"
 
     skip:
@@ -435,8 +438,8 @@ from fabric_cicd import deploy_with_config
 
 # Deploy using a config file
 deploy_with_config(
-    config_file_path="path/to/config.yml", # required
-    environment="dev" # optional (recommended)
+    config_file_path="path/to/config.yml",  # required
+    environment="dev"  # optional (recommended)
 )
 ```
 
@@ -498,14 +501,14 @@ deploy_with_config(
 
 ## Troubleshooting Guide
 
-The configuration file undergoes validation prior to reaching the deployment phase. Please note some common issues that may occur:
+The configuration file undergoes validation prior to reaching the deployment phase. Here are some common issues that may occur:
 
-**1. File Not Found**: Ensure the configuration file path is correct and accessible (must be an absolute path).
+1. **File Not Found:** Ensure the configuration file path is correct and accessible (must be an absolute path).
 
-**2. Invalid YAML**: Check YAML syntax for errors (indentation, missing quotes, etc.).
+2. **Invalid YAML:** Check YAML syntax for errors (indentation, missing quotes, etc.).
 
-**3. Missing Required Fields**: Ensure `core` section is present and contains the required fields (workspace identifier, repository directory path).
+3. **Missing Required Fields:** Ensure the `core` section is present and contains the required fields (workspace identifier, repository directory path).
 
-**4. Path Resolution Errors**: Relative paths are resolved relative to the `config.yml` file location. Check path inputs are valid and accessible.
+4. **Path Resolution Errors:** Relative paths are resolved relative to the `config.yml` file location. Check that path inputs are valid and accessible.
 
-**5. Environment Not Found**: The `environment` parameter must match one of the environment keys (like "dev", "test", "prod") used in the configuration mappings.
+5. **Environment Not Found:** The `environment` parameter must match one of the environment keys (e.g., "dev", "test", "prod") used in the configuration mappings for required fields (`workspace`/`workspace_id`, `repository_directory`).
