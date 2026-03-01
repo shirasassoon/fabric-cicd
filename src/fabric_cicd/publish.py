@@ -48,8 +48,8 @@ def publish_all_items(
     Args:
         fabric_workspace_obj: The FabricWorkspace object containing the items to be published.
         item_name_exclude_regex: Regex pattern to exclude specific items from being published.
-        folder_path_exclude_regex: Regex pattern matched against folder paths (e.g., "/folder_name") to exclude folders and their contents from being published.
-        folder_path_to_include: List of folder paths in the format "/folder_name"; only the specified folders and their contents will be published.
+        folder_path_exclude_regex: Regex pattern matched against folder paths (e.g., "/folder_name") to exclude folders and their items from being published.
+        folder_path_to_include: List of folder paths in the format "/folder_name"; only the specified folders and their items will be published.
         items_to_include: List of items in the format "item_name.item_type" that should be published.
         shortcut_exclude_regex: Regex pattern to exclude specific shortcuts from being published in lakehouses.
 

@@ -60,7 +60,7 @@ A subset of items in the repository that exist within a Fabric workspace folder 
     - Folder paths must start with `/` (e.g., `/folder_name` or `/folder_name/nested_folder`). The matching folder path(s) and their contained items will be included in the publish operation; any other items contained within Fabric folders will be excluded.
     - When using `folder_path_to_include` with nested paths (e.g., `/subfolder1/subfolder2`), ancestor folders (e.g., `/subfolder1`) are automatically created to preserve the correct folder hierarchy, but items directly under the ancestor folder are **not** published unless the ancestor folder is also explicitly included in the list.
 
-**Note:** `folder_path_exclude_regex` and `folder_path_to_include` cannot be used together for the same environment. Folder-based item exclusion/inclusion does not impact standalone Fabric items.
+**Note:** `folder_path_exclude_regex` and `folder_path_to_include` are mutually exclusive and cannot be used together for the same deployment. These filters are ignored when the `disable_workspace_folder_publish` feature flag is set. Folder-based filtering does not impact standalone items.
 
 ### Item-Level Filtering
 

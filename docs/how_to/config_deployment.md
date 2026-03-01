@@ -115,11 +115,7 @@ core:
 
 The `publish` section is optional and controls item publishing behavior. If this section is omitted entirely, publishing will run with **default behavior — all items published, no exclusions.** It includes various optional settings to enable/disable publishing operations or selectively publish items.
 
-**Note:** Folder-level filtering only applies to items within a Fabric folder. Folder paths must start with `/` (e.g., `/folder_name` or `/folder_name/nested_folder`). `folder_exclude_regex` and `folder_path_to_include` are **mutually exclusive** — providing both for the same environment will result in a validation error.
-
-When using `folder_exclude_regex`, the pattern is matched using `search()` (substring match), so a pattern like `subfolder1` will match any folder path containing "subfolder1" (e.g., `/subfolder1`, `/subfolder1/subfolder2`, `/other/subfolder1`). To target a specific folder, use an anchored pattern with a leading `/` (e.g., `^/subfolder1$`) — this ensures only the exact folder path matches directly. Note that child folders like `/subfolder1/subfolder2` will also be excluded automatically since their parent folder was excluded, preserving a consistent folder hierarchy.
-
-When using `folder_path_to_include` with nested paths (e.g., `/subfolder1/subfolder2`), ancestor folders (e.g., `/subfolder1`) are automatically created to preserve the correct folder hierarchy, but items directly under the ancestor folder are **not** published unless the ancestor folder is also explicitly included in the list.
+**Note:** `folder_exclude_regex` and `folder_path_to_include` are mutually exclusive — providing both for the same environment will result in a validation error. For detailed information about folder and item filtering behavior, see [Selective Deployment Features](optional_feature.md#selective-deployment-features).
 
 ```yaml
 publish:
