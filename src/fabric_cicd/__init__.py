@@ -89,7 +89,8 @@ def disable_file_logging() -> None:
 configure_logger()
 sys.excepthook = exception_handler
 
-check_version()
+if not constants.VERSION_CHECK_DISABLED:
+    check_version()
 
 __all__ = [
     "FabricWorkspace",

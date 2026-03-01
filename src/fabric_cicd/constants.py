@@ -7,7 +7,7 @@ import os
 from enum import Enum
 
 # General
-VERSION = "0.1.34"
+VERSION = "0.2.0"
 DEFAULT_GUID = "00000000-0000-0000-0000-000000000000"
 FEATURE_FLAG = set()
 USER_AGENT = f"ms-fabric-cicd/{VERSION}"
@@ -33,6 +33,10 @@ class EnvVar(str, Enum):
     """Override base delay for item name conflict retries. Defaults to 30 seconds."""
     RETRY_MAX_DURATION_SECONDS = "FABRIC_CICD_RETRY_MAX_DURATION_SECONDS"
     """Override max duration for item name conflict retries. Defaults to 300 seconds."""
+    PARALLEL_MAX_WORKERS = "FABRIC_CICD_PARALLEL_MAX_WORKERS"
+    """Override max parallel workers for concurrent item publishing. Defaults to 8."""
+    VERSION_CHECK_DISABLED = "FABRIC_CICD_VERSION_CHECK_DISABLED"
+    """Set to '1', 'true', or 'yes' to skip version check at startup."""
 
 
 class ItemType(str, Enum):
@@ -161,8 +165,17 @@ RETRY_AFTER_SECONDS = float(os.environ.get(EnvVar.RETRY_AFTER_SECONDS.value, 300
 RETRY_BASE_DELAY_SECONDS = float(os.environ.get(EnvVar.RETRY_BASE_DELAY_SECONDS.value, 30))
 RETRY_MAX_DURATION_SECONDS = int(os.environ.get(EnvVar.RETRY_MAX_DURATION_SECONDS.value, 300))
 
+# Parallel Settings
+_parallel_max_workers_raw = os.environ.get(EnvVar.PARALLEL_MAX_WORKERS.value)
+PARALLEL_MAX_WORKERS: int = (
+    int(_parallel_max_workers_raw) if _parallel_max_workers_raw and _parallel_max_workers_raw.isdigit() else 8
+)
+
 # HTTP Headers
 AUTHORIZATION_HEADER = "authorization"
+
+# Version Check
+VERSION_CHECK_DISABLED = os.environ.get(EnvVar.VERSION_CHECK_DISABLED.value, "").lower() in VALID_ENABLE_FLAGS
 
 # Publish
 SHELL_ONLY_PUBLISH = [
@@ -254,6 +267,7 @@ PARAMETER_MSGS = {
     "missing key": "{} is missing keys",
     "invalid key": "{} contains invalid keys",
     "valid keys": "{} contains valid keys",
+    "mixed format": "Parameter '{}' contains mixed format keys (legacy and new format cannot be combined)",
     "missing required value": "Missing value for '{}' key in {}",
     "valid required values": "Required values in {} are valid",
     "missing replace value": "{} is missing a replace value for '{}' environment'",
@@ -285,7 +299,7 @@ PARAMETER_MSGS = {
     "regex_ignored": "The provided is_regex value is not set to 'true', regex matching will be ignored.",
     "validation_complete": "Parameter file validation passed",
     "gateway_deprecated": "The 'gateway_binding' parameter is deprecated and will be removed in future releases. Please use 'semantic_model_binding' instead.",
-    "duplicate_semantic_model": "Duplicate semantic model names found: {}. Multiple connections to the same semantic model are permitted. Ensure this is intentional.",
+    "duplicate_semantic_model": "Duplicate semantic model names found: {}. Each semantic model should only appear once in the configuration as only one connection can be bound per semantic model. Please remove duplicate entries to avoid unpredictable binding behavior.",
     # Template parameter file messages
     "template_file_not_found": "Template parameter file not found: {}",
     "template_file_invalid": "Invalid template parameter file {}: {}",
