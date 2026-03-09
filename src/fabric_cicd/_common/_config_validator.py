@@ -6,12 +6,13 @@
 import logging
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 import yaml
 
 from fabric_cicd import constants
 from fabric_cicd._common._exceptions import InputError
+from fabric_cicd._common._validate_env_vars import _URL_CONSTANTS, validate_api_url
 
 logger = logging.getLogger(__name__)
 
@@ -201,7 +202,7 @@ class ConfigValidator:
 
         return True
 
-    def _merge_overrides(self, section: str, value: dict | list) -> None:
+    def _merge_overrides(self, section: str, value: Union[dict, list]) -> None:
         """Merge section and setting overrides into config file."""
         # Special handling for features and constants sections
         if section == "features":
@@ -569,7 +570,7 @@ class ConfigValidator:
             )
 
     def _resolve_path_field(
-        self, field_value: str | dict, field_name: str, section_name: str, path_type: str = "directory"
+        self, field_value: Union[str, dict], field_name: str, section_name: str, path_type: str = "directory"
     ) -> None:
         """Path resolution for configuration "path" fields (e.g, repository_directory, parameter)."""
         # Prepare paths for resolution
@@ -1028,7 +1029,7 @@ class ConfigValidator:
 
     def _validate_constants_dict(self, constants_dict: dict, context: str) -> None:
         """Validate a constants dictionary with proper context for error messages."""
-        for key, _ in constants_dict.items():
+        for key, value in constants_dict.items():
             if not isinstance(key, str) or not key.strip():
                 self.errors.append(
                     constants.CONFIG_VALIDATION_MSGS["operation"]["invalid_constant_key"].format(context, key)
@@ -1040,6 +1041,17 @@ class ConfigValidator:
                 self.errors.append(
                     constants.CONFIG_VALIDATION_MSGS["operation"]["unknown_constant"].format(key, context)
                 )
+                continue
+
+            # Validate URL constants
+            if key in _URL_CONSTANTS:
+                if not isinstance(value, str):
+                    self.errors.append(f"'{key}' in '{context}' must be a string URL, got {type(value).__name__}")
+                    continue
+                try:
+                    validate_api_url(value, f"{context}.{key}")
+                except InputError as e:
+                    self.errors.append(str(e))
 
 
 def _get_config_fields(config: dict) -> list[tuple[dict, str, str, bool, bool]]:
