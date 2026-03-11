@@ -12,7 +12,7 @@ from azure.core.credentials import TokenCredential
 import fabric_cicd._items as items
 from fabric_cicd import constants
 from fabric_cicd._common._config_utils import (
-    apply_config_overrides,
+    config_overrides_scope,
     extract_publish_settings,
     extract_unpublish_settings,
     extract_workspace_settings,
@@ -401,24 +401,19 @@ def deploy_with_config(
     log_header(logger, "Config-Based Deployment")
     logger.info(f"Loading configuration from {config_file_path} for environment '{environment}'")
 
-    # Initialize workspace as None so it exists in except block scope
-    workspace = None
+    # Validate environment
+    environment = validate_environment(environment)
 
-    try:
-        # Validate environment
-        environment = validate_environment(environment)
+    # Load and validate configuration file
+    config = load_config_file(config_file_path, environment, config_override)
 
-        # Load and validate configuration file
-        config = load_config_file(config_file_path, environment, config_override)
+    # Extract environment-specific settings
+    workspace_settings = extract_workspace_settings(config, environment)
+    publish_settings = extract_publish_settings(config, environment)
+    unpublish_settings = extract_unpublish_settings(config, environment)
 
-        # Extract environment-specific settings
-        workspace_settings = extract_workspace_settings(config, environment)
-        publish_settings = extract_publish_settings(config, environment)
-        unpublish_settings = extract_unpublish_settings(config, environment)
-
-        # Apply feature flags and constants if specified
-        apply_config_overrides(config, environment)
-
+    # Apply feature flags and constants if specified
+    with config_overrides_scope(config, environment):
         # Create FabricWorkspace object with extracted settings
         workspace = FabricWorkspace(
             repository_directory=workspace_settings["repository_directory"],
@@ -451,19 +446,8 @@ def deploy_with_config(
         else:
             logger.info(f"Skipping unpublish operation for environment '{environment}'")
 
-    except Exception as e:
-        # Preserve partial results before workspace goes out of scope
-        if workspace is not None:
-            partial_results = getattr(workspace, "responses", None)
-            if partial_results:
-                e.partial_results = partial_results
-        e.deployment_status = DeploymentStatus.FAILED
-        e.deployment_message = "Deployment failed"
-        raise
-
-    logger.info("Config-based deployment completed successfully")
-    return DeploymentResult(
-        status=DeploymentStatus.COMPLETED,
-        message="Deployment completed successfully",
-        responses=getattr(workspace, "responses", None),
-    )
+        logger.info("Config-based deployment completed successfully")
+        return DeploymentResult(
+            status=DeploymentStatus.COMPLETED,
+            message="Deployment completed successfully",
+        )
