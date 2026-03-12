@@ -1488,6 +1488,8 @@ class TestDeployWithConfigExceptionAttributes:
     )
     def test_exception_has_partial_responses_when_enabled(self, mock_unpublish, mock_publish, mock_workspace, tmp_path):
         """Test that partial responses are attached to exceptions when response collection is enabled."""
+        _ = mock_publish
+        
         test_repo_dir = tmp_path / "test" / "path"
         test_repo_dir.mkdir(parents=True)
 
