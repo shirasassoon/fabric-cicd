@@ -431,7 +431,8 @@ def deploy_with_config(
 
         # Apply feature flags and constants if specified
         with config_overrides_scope(config, environment):
-            # Determine if the flag has been set in the config file
+            
+            # Determine if response collection flag has been enabled in the config file
             responses_enabled = FeatureFlag.ENABLE_RESPONSE_COLLECTION.value in constants.FEATURE_FLAG
             
             # Create FabricWorkspace object with extracted settings
