@@ -345,7 +345,7 @@ def deploy_with_config(
 
     Returns:
         DeploymentResult: A result object containing the deployment status, message, and
-            optional responses. The status will be DeploymentStatus.COMPLETED on success.
+            responses (opt-in). The status will be DeploymentStatus.COMPLETED on success.
             The responses field contains API response data when the
             ``enable_response_collection`` feature flag is enabled, otherwise None.
 
@@ -356,7 +356,7 @@ def deploy_with_config(
     Note:
         On failure, the raised exception will have ``deployment_status`` and ``deployment_message``
         attributes attached. If the ``enable_response_collection`` feature flag is enabled and some
-        items were published before the failure, the exception will also have a ``partial_results``
+        items were published before the failure, the exception will also have a ``responses``
         attribute containing the collected API responses.
 
     Examples:
@@ -397,57 +397,88 @@ def deploy_with_config(
         ...         }
         ...     }
         ... )
+        Handling deployment failures
+        >>> from fabric_cicd import deploy_with_config
+        >>> try:
+        ...     result = deploy_with_config(
+        ...         config_file_path="workspace/config.yml",
+        ...         environment="prod"
+        ...     )
+        ... except Exception as e:
+        ...     print(e.deployment_status)   # DeploymentStatus.FAILED
+        ...     print(e.deployment_message)  # "Deployment failed with error: ..."
+        ...     if hasattr(e, "responses"):
+        ...         print(e.responses)  # Partial API responses collected before failure
     """
     log_header(logger, "Config-Based Deployment")
     logger.info(f"Loading configuration from {config_file_path} for environment '{environment}'")
 
-    # Validate environment
-    environment = validate_environment(environment)
+    # Initialize workspace as None so it exists in except block scope
+    workspace = None
+    responses_enabled = False
 
-    # Load and validate configuration file
-    config = load_config_file(config_file_path, environment, config_override)
+    try:
+        # Validate environment
+        environment = validate_environment(environment)
 
-    # Extract environment-specific settings
-    workspace_settings = extract_workspace_settings(config, environment)
-    publish_settings = extract_publish_settings(config, environment)
-    unpublish_settings = extract_unpublish_settings(config, environment)
+        # Load and validate configuration file
+        config = load_config_file(config_file_path, environment, config_override)
 
-    # Apply feature flags and constants if specified
-    with config_overrides_scope(config, environment):
-        # Create FabricWorkspace object with extracted settings
-        workspace = FabricWorkspace(
-            repository_directory=workspace_settings["repository_directory"],
-            item_type_in_scope=workspace_settings.get("item_types_in_scope"),
-            environment=environment,
-            workspace_id=workspace_settings.get("workspace_id"),
-            workspace_name=workspace_settings.get("workspace_name"),
-            token_credential=token_credential,
-            parameter_file_path=workspace_settings.get("parameter_file_path"),
-        )
-        # Execute deployment operations based on skip settings
-        if not publish_settings.get("skip", False):
-            publish_all_items(
-                workspace,
-                item_name_exclude_regex=publish_settings.get("exclude_regex"),
-                folder_path_exclude_regex=publish_settings.get("folder_exclude_regex"),
-                folder_path_to_include=publish_settings.get("folder_path_to_include"),
-                items_to_include=publish_settings.get("items_to_include"),
-                shortcut_exclude_regex=publish_settings.get("shortcut_exclude_regex"),
+        # Extract environment-specific settings
+        workspace_settings = extract_workspace_settings(config, environment)
+        publish_settings = extract_publish_settings(config, environment)
+        unpublish_settings = extract_unpublish_settings(config, environment)
+
+        # Apply feature flags and constants if specified
+        with config_overrides_scope(config, environment):
+            # Determine if the flag has been set in the config file
+            responses_enabled = FeatureFlag.ENABLE_RESPONSE_COLLECTION.value in constants.FEATURE_FLAG
+            
+            # Create FabricWorkspace object with extracted settings
+            workspace = FabricWorkspace(
+                repository_directory=workspace_settings["repository_directory"],
+                item_type_in_scope=workspace_settings.get("item_types_in_scope"),
+                environment=environment,
+                workspace_id=workspace_settings.get("workspace_id"),
+                workspace_name=workspace_settings.get("workspace_name"),
+                token_credential=token_credential,
+                parameter_file_path=workspace_settings.get("parameter_file_path"),
             )
-        else:
-            logger.info(f"Skipping publish operation for environment '{environment}'")
+            # Execute deployment operations based on skip settings
+            if not publish_settings.get("skip", False):
+                publish_all_items(
+                    workspace,
+                    item_name_exclude_regex=publish_settings.get("exclude_regex"),
+                    folder_path_exclude_regex=publish_settings.get("folder_exclude_regex"),
+                    folder_path_to_include=publish_settings.get("folder_path_to_include"),
+                    items_to_include=publish_settings.get("items_to_include"),
+                    shortcut_exclude_regex=publish_settings.get("shortcut_exclude_regex"),
+                )
+            else:
+                logger.info(f"Skipping publish operation for environment '{environment}'")
 
-        if not unpublish_settings.get("skip", False):
-            unpublish_all_orphan_items(
-                workspace,
-                item_name_exclude_regex=unpublish_settings.get("exclude_regex", "^$"),
-                items_to_include=unpublish_settings.get("items_to_include"),
-            )
-        else:
-            logger.info(f"Skipping unpublish operation for environment '{environment}'")
+            if not unpublish_settings.get("skip", False):
+                unpublish_all_orphan_items(
+                    workspace,
+                    item_name_exclude_regex=unpublish_settings.get("exclude_regex", "^$"),
+                    items_to_include=unpublish_settings.get("items_to_include"),
+                )
+            else:
+                logger.info(f"Skipping unpublish operation for environment '{environment}'")
 
-        logger.info("Config-based deployment completed successfully")
-        return DeploymentResult(
-            status=DeploymentStatus.COMPLETED,
-            message="Deployment completed successfully",
-        )
+    except Exception as e:
+        # Preserve partial results before workspace goes out of scope
+        if workspace is not None:
+            partial_results = getattr(workspace, "responses", None)
+            if partial_results and responses_enabled:
+                e.responses = partial_results
+        e.deployment_status = DeploymentStatus.FAILED
+        e.deployment_message = "Deployment failed with error: " + str(e)
+        raise
+
+    logger.info("Config-based deployment completed successfully")
+    return DeploymentResult(
+        status=DeploymentStatus.COMPLETED,
+        message="Deployment completed successfully",
+        responses=(workspace.responses if responses_enabled and workspace.responses else None),
+    )
