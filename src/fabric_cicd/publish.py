@@ -347,7 +347,8 @@ def deploy_with_config(
         DeploymentResult: A result object containing the deployment status, message, and
             responses (opt-in). The status will be DeploymentStatus.COMPLETED on success.
             The responses field contains API response data when the
-            ``enable_response_collection`` feature flag is enabled, otherwise None.
+            ``enable_response_collection`` feature flag is enabled and responses were collected, 
+            otherwise None.
 
     Raises:
         InputError: If configuration file is invalid or environment not found.
