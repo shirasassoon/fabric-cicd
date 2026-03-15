@@ -55,7 +55,8 @@ def publish_all_items(
         shortcut_exclude_regex: Regex pattern to exclude specific shortcuts from being published in lakehouses.
 
     Returns:
-        Dict containing all API responses if the ``enable_response_collection`` feature flag is enabled and responses were collected, otherwise None.
+        Dict containing all API responses if the ``enable_response_collection`` feature flag is enabled
+        and at least one response was collected; otherwise, None.
 
     folder_path_exclude_regex:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective deployments are
@@ -251,7 +252,8 @@ def unpublish_all_orphan_items(
         items_to_include: List of items in the format "item_name.item_type" that should be unpublished.
 
     Returns:
-        Dict containing all API responses if the ``enable_response_collection`` feature flag is enabled and responses were collected, otherwise None.
+        Dict containing all collected API responses if the ``enable_response_collection`` feature flag is enabled
+        and at least one response was collected; otherwise, None.
 
     items_to_include:
         This is an experimental feature in fabric-cicd. Use at your own risk as selective unpublishing is not recommended due to item dependencies.
