@@ -376,7 +376,8 @@ def deploy_with_config(
     Returns:
         DeploymentResult: A result object containing the deployment status, message, and
             responses (opt-in). The status will be DeploymentStatus.COMPLETED on success.
-            The responses field contains API response data when the
+            The responses field contains a dictionary with ``"publish"`` and/or ``"unpublish"``
+            keys mapping to their respective API response data when the
             ``enable_response_collection`` feature flag is enabled and responses were collected,
             otherwise None.
 
@@ -400,7 +401,7 @@ def deploy_with_config(
         ... )
         >>> print(result.status)    # DeploymentStatus.COMPLETED
         >>> print(result.message)   # "Deployment completed successfully"
-        >>> print(result.responses) # API responses if collected and feature flag enabled
+        >>> print(result.responses) # {"publish": {...}, "unpublish": {...}} or None
 
         With custom authentication
         >>> from fabric_cicd import deploy_with_config
@@ -440,7 +441,7 @@ def deploy_with_config(
         ...     )
         ...     print(result.status)    # DeploymentStatus.COMPLETED
         ...     print(result.message)   # "Deployment completed successfully"
-        ...     print(result.responses) # API responses if collected (feature flag enabled via config file)
+        ...     print(result.responses) # {"publish": {...}, "unpublish": {...}} or None
         ... except Exception as e:
         ...     print(e.deployment_result.status)    # DeploymentStatus.FAILED
         ...     print(e.deployment_result.message)   # Original error message
@@ -520,6 +521,11 @@ def deploy_with_config(
 
 def _collect_responses(workspace: Optional[FabricWorkspace], responses_enabled: bool) -> Optional[dict]:
     """Return collected API responses if available, otherwise None."""
-    if responses_enabled and workspace is not None and workspace.responses:
-        return workspace.responses
-    return None
+    if not responses_enabled or workspace is None:
+        return None
+    result = {}
+    if workspace.responses:
+        result["publish"] = workspace.responses
+    if workspace.unpublish_responses:
+        result["unpublish"] = workspace.unpublish_responses
+    return result or None
