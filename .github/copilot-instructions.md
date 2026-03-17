@@ -93,11 +93,11 @@ Onboarding a new Microsoft Fabric item type requires changes across multiple fil
 **Pre-requisites:**
 
 - Confirm Microsoft Fabric API support for the new item type, search API documentation: https://learn.microsoft.com/en-us/rest/api/fabric/
-- New item type definition must be supported in source control/Git integration and conform to fabric-cicd flow
+- New item type definition must be supported in source control/Git integration and the Fabric API must support deploying its definition. See supported items: https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/item-definition-overview. Note that if an item type has a definition, but the API does not support definition deployment, it cannot be supported by fabric-cicd.
 - Determine if the new item type has unique deployment or parameterization requirements
 - Check for dependency on other item types
 
-Steps:
+**Steps:**
 
 1. Register the new item type in `src/fabric_cicd/constants.py`:
     - Add to the `ItemType` enum (e.g. `ITEM_TYPE_NEWTYPE = "NewType"`)
@@ -127,11 +127,11 @@ Steps:
         - `post_publish_all()`: Post-publish actions (e.g., Semantic Model connection binding)
         - `post_publish_all_check()`: Async publish state checking (set `has_async_publish_check = True`)
     - See existing examples for reference:
-        - Simple: \_graphqlapi.py, \_copyjob.py (no overrides needed)
-        - With exclude paths: \_dataagent.py, \_eventhouse.py
-        - With custom file processing: \_report.py, \_notebook.py, \_datapipeline.py
-        - With creation payload: \_warehouse.py, \_lakehouse.py
-        - With post-publish actions: \_semanticmodel.py (connection binding), \_environment.py (metadata + async check)
+        - Simple: `_graphqlapi.py`, `_copyjob.py` (no overrides needed)
+        - With exclude paths: `_dataagent.py`, `_eventhouse.py`
+        - With custom file processing: `_report.py`, `_notebook.py`, `_datapipeline.py`
+        - With creation payload: `_warehouse.py`, `_lakehouse.py`
+        - With post-publish actions: `_semanticmodel.py` (connection binding), `_environment.py` (metadata + async check)
 
 3. Register the Publisher in the Factory Method:
     - In `src/fabric_cicd/_items/_base_publisher.py`, update the `ItemPublisher.create()` factory method:
