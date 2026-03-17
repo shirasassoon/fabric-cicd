@@ -160,8 +160,9 @@ def publish_all_items(
         >>> responses = publish_all_items(workspace)
         >>> # Access all responses
         >>> print(responses)
-        >>> # Access individual item responses
+        >>> # Access individual item response (dict with "header", "body", "status_code" keys)
         >>> notebook_response = workspace.responses["Notebook"]["Hello World"]
+        >>> print(notebook_response["status_code"])  # e.g., 200
     """
     fabric_workspace_obj = validate_fabric_workspace_obj(fabric_workspace_obj)
     responses_enabled = FeatureFlag.ENABLE_RESPONSE_COLLECTION.value in constants.FEATURE_FLAG
@@ -306,8 +307,9 @@ def unpublish_all_orphan_items(
         >>> responses = unpublish_all_orphan_items(workspace)
         >>> # Access all unpublish responses
         >>> print(responses)
-        >>> # Access individual item responses
+        >>> # Access individual item response (dict with "header", "body", "status_code" keys)
         >>> notebook_response = workspace.unpublish_responses["Notebook"]["Hello World"]
+        >>> print(notebook_response["status_code"])  # e.g., 200
     """
     fabric_workspace_obj = validate_fabric_workspace_obj(fabric_workspace_obj)
     validate_items_to_include(items_to_include, operation=constants.OperationType.UNPUBLISH)
