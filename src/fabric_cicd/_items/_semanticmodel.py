@@ -14,54 +14,6 @@ from fabric_cicd.constants import EXCLUDE_PATH_REGEX_MAPPING, ItemType
 logger = logging.getLogger(__name__)
 
 
-def build_binding_mapping_legacy(fabric_workspace_obj: FabricWorkspace, semantic_model_binding: list) -> dict:
-    """
-    Build the connection mapping from legacy list-based semantic_model_binding parameter.
-
-    Args:
-        fabric_workspace_obj: The FabricWorkspace object
-        semantic_model_binding: The semantic_model_binding parameter as a list
-
-    Returns:
-        Dictionary mapping semantic model names to connection IDs
-    """
-    logger.warning(
-        "The legacy 'semantic_model_binding' list format is deprecated and will be removed in a future release. "
-        "Please migrate to the new dictionary format with 'default' and 'models' keys. "
-        "See: https://microsoft.github.io/fabric-cicd/how_to/parameterization/"
-    )
-    item_type = "SemanticModel"
-    binding_mapping = {}
-    repository_models = set(fabric_workspace_obj.repository_items.get(item_type, {}).keys())
-
-    for entry in semantic_model_binding:
-        connection_id = entry.get("connection_id")
-        model_names = entry.get("semantic_model_name", [])
-
-        if not connection_id:
-            logger.debug("No connection_id found in semantic_model_binding entry, skipping")
-            continue
-
-        # Legacy format only supports string connection_id
-        if isinstance(connection_id, dict):
-            logger.warning(
-                "Environment-specific connection_id dictionaries are not supported in the legacy format. "
-                "Please migrate to the new dictionary format to use environment-specific values."
-            )
-            continue
-
-        if isinstance(model_names, str):
-            model_names = [model_names]
-
-        for name in model_names:
-            if name not in repository_models:
-                logger.warning(f"Semantic model '{name}' specified in parameter.yml not found in repository")
-                continue
-            binding_mapping[name] = connection_id
-
-    return binding_mapping
-
-
 def build_binding_mapping(
     fabric_workspace_obj: FabricWorkspace, semantic_model_binding: dict, environment: str
 ) -> dict:
@@ -277,9 +229,7 @@ class SemanticModelPublisher(ItemPublisher):
         # Build connection mapping from semantic_model_binding parameter (support legacy or new formats)
         environment = self.fabric_workspace_obj.environment
 
-        if isinstance(semantic_model_binding, list):
-            binding_mapping = build_binding_mapping_legacy(self.fabric_workspace_obj, semantic_model_binding)
-        elif isinstance(semantic_model_binding, dict):
+        if isinstance(semantic_model_binding, dict):
             binding_mapping = build_binding_mapping(self.fabric_workspace_obj, semantic_model_binding, environment)
         else:
             logger.warning(

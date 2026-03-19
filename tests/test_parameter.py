@@ -2692,68 +2692,7 @@ config:
 @pytest.mark.parametrize(
     ("param_value", "expected_ok", "expected_msg_contains"),
     [
-        # ===== Legacy format tests =====
-        pytest.param(
-            [{"connection_id": "76e05dfe-9855-4e3d-a410-1dda048dbe99", "semantic_model_name": ["model1", "model2"]}],
-            True,
-            "parameter is valid",
-            id="legacy_string_connection_id",
-        ),
-        pytest.param(
-            [
-                {
-                    "connection_id": {
-                        "PPE": "76e05dfe-9855-4e3d-a410-1dda048dbe99",
-                        "PROD": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
-                    },
-                    "semantic_model_name": ["model1", "model2"],
-                }
-            ],
-            False,
-            "must be a string guid",
-            id="legacy_dict_connection_id_not_supported",
-        ),
-        pytest.param(
-            [
-                {
-                    "connection_id": "invalid-guid-format",
-                    "semantic_model_name": ["model1"],
-                }
-            ],
-            False,
-            "not a valid guid",
-            id="legacy_invalid_guid",
-        ),
-        pytest.param(
-            [
-                {
-                    "connection_id": 12345,
-                    "semantic_model_name": ["model1"],
-                }
-            ],
-            False,
-            "must be a string guid",
-            id="legacy_connection_id_not_string",
-        ),
-        pytest.param(
-            [{"connection_id": "", "semantic_model_name": ["model1"]}],
-            False,
-            "missing value",
-            id="legacy_empty_connection_id",
-        ),
-        pytest.param(
-            [
-                {
-                    "connection_id": "76e05dfe-9855-4e3d-a410-1dda048dbe99",
-                    "semantic_model_name": "Model1",
-                    "default": "x",
-                }
-            ],
-            False,
-            "mixed format",
-            id="legacy_mixed_with_new_keys",
-        ),
-        # ===== New format tests =====
+        # ===== Valid format tests =====
         pytest.param(
             {"default": {"connection_id": {"DEV": "76e05dfe-9855-4e3d-a410-1dda048dbe99"}}},
             True,
@@ -2787,6 +2726,7 @@ config:
             "parameter is valid",
             id="new_default_and_models",
         ),
+        # ===== Invalid format tests =====
         pytest.param(
             {},
             False,
@@ -2869,10 +2809,17 @@ config:
             "non-empty dictionary",
             id="new_empty_connection_id_dict",
         ),
+        # ===== Legacy format rejected =====
+        pytest.param(
+            [{"connection_id": "76e05dfe-9855-4e3d-a410-1dda048dbe99", "semantic_model_name": ["model1", "model2"]}],
+            False,
+            "dictionary",
+            id="legacy_list_format_rejected",
+        ),
     ],
 )
 def test_semantic_model_binding_validation(empty_parameter, param_value, expected_ok, expected_msg_contains):
-    """Parametrized test for semantic_model_binding validation covering legacy and new formats."""
+    """Parametrized test for semantic_model_binding validation."""
     empty_parameter.environment_parameter = {"semantic_model_binding": param_value}
     ok, msg = empty_parameter._validate_semantic_model_binding_parameter("semantic_model_binding")
     assert ok is expected_ok
@@ -2880,68 +2827,34 @@ def test_semantic_model_binding_validation(empty_parameter, param_value, expecte
 
 
 @pytest.mark.parametrize(
-    ("connection_id", "require_string", "require_dict", "expected_ok", "expected_msg_contains"),
+    ("connection_id", "expected_ok", "expected_msg_contains"),
     [
-        pytest.param(
-            "76e05dfe-9855-4e3d-a410-1dda048dbe99",
-            True,
-            False,
-            True,
-            "Valid",
-            id="legacy_valid_string_guid",
-        ),
-        pytest.param(
-            "invalid-guid",
-            True,
-            False,
-            False,
-            "not a valid GUID",
-            id="legacy_invalid_guid",
-        ),
-        pytest.param(
-            {"DEV": "76e05dfe-9855-4e3d-a410-1dda048dbe99"},
-            True,
-            False,
-            False,
-            "must be a string GUID",
-            id="legacy_dict_not_supported",
-        ),
         pytest.param(
             {
                 "PPE": "76e05dfe-9855-4e3d-a410-1dda048dbe99",
                 "PROD": "a1b2c3d4-5678-90ab-cdef-1234567890ab",
             },
-            False,
-            True,
             True,
             "Valid",
-            id="new_valid_multi_env",
+            id="valid_multi_env",
         ),
         pytest.param(
             {"PPE": "not-a-guid", "PROD": "a1b2c3d4-5678-90ab-cdef-1234567890ab"},
             False,
-            True,
-            False,
             "not a valid GUID",
-            id="new_invalid_guid_format",
+            id="invalid_guid_format",
         ),
         pytest.param(
             "76e05dfe-9855-4e3d-a410-1dda048dbe99",
             False,
-            True,
-            False,
             "must be a dictionary",
-            id="new_string_not_supported",
+            id="string_not_supported",
         ),
     ],
 )
-def test_validate_connection_id(
-    empty_parameter, connection_id, require_string, require_dict, expected_ok, expected_msg_contains
-):
+def test_validate_connection_id(empty_parameter, connection_id, expected_ok, expected_msg_contains):
     """Test _validate_connection_id with various inputs."""
-    ok, msg = empty_parameter._validate_connection_id(
-        connection_id, "semantic_model_binding", require_string=require_string, require_dict=require_dict
-    )
+    ok, msg = empty_parameter._validate_connection_id(connection_id, "semantic_model_binding")
     assert ok is expected_ok
     assert expected_msg_contains in msg
 
@@ -2958,26 +2871,10 @@ def test_semantic_model_binding_new_format_models_invalid_connection_guid(empty_
     assert "not a valid guid" in msg.lower()
 
 
-def test_semantic_model_binding_legacy_format_mixed_with_new_keys(empty_parameter):
-    """Test semantic_model_binding legacy format with new format keys mixed in (should fail)."""
-    empty_parameter.environment_parameter = {
-        "semantic_model_binding": [
-            {
-                "connection_id": "76e05dfe-9855-4e3d-a410-1dda048dbe99",
-                "semantic_model_name": "Model1",
-                "default": "should-not-be-here",  # New format key in legacy entry
-            }
-        ]
-    }
-    ok, msg = empty_parameter._validate_semantic_model_binding_parameter("semantic_model_binding")
-    assert ok is False
-    assert "mixed format" in msg.lower()
-
-
 @pytest.mark.parametrize(
-    ("param_value", "is_new_format", "expected_duplicates"),
+    ("param_value", "expected_duplicates"),
     [
-        # New format: duplicate name triggers warning
+        # Duplicate name triggers warning
         (
             {
                 "default": {"connection_id": {"PPE": "00000000-0000-0000-0000-000000000001"}},
@@ -2986,10 +2883,9 @@ def test_semantic_model_binding_legacy_format_mixed_with_new_keys(empty_paramete
                     {"semantic_model_name": "ModelA", "connection_id": {"PPE": "00000000-0000-0000-0000-000000000003"}},
                 ],
             },
-            True,
             {"ModelA"},
         ),
-        # New format: no duplicates, no warning
+        # No duplicates, no warning
         (
             {
                 "default": {"connection_id": {"PPE": "00000000-0000-0000-0000-000000000001"}},
@@ -2998,28 +2894,9 @@ def test_semantic_model_binding_legacy_format_mixed_with_new_keys(empty_paramete
                     {"semantic_model_name": "ModelB", "connection_id": {"PPE": "00000000-0000-0000-0000-000000000003"}},
                 ],
             },
-            True,
             set(),
         ),
-        # Legacy format: duplicate name triggers warning
-        (
-            [
-                {"semantic_model_name": "ModelA", "connection_id": "00000000-0000-0000-0000-000000000001"},
-                {"semantic_model_name": "ModelA", "connection_id": "00000000-0000-0000-0000-000000000002"},
-            ],
-            False,
-            {"ModelA"},
-        ),
-        # Legacy format: no duplicates, no warning
-        (
-            [
-                {"semantic_model_name": "ModelA", "connection_id": "00000000-0000-0000-0000-000000000001"},
-                {"semantic_model_name": "ModelB", "connection_id": "00000000-0000-0000-0000-000000000002"},
-            ],
-            False,
-            set(),
-        ),
-        # New format: duplicate within a list value
+        # Duplicate within a list value
         (
             {
                 "default": {"connection_id": {"PPE": "00000000-0000-0000-0000-000000000001"}},
@@ -3030,34 +2907,21 @@ def test_semantic_model_binding_legacy_format_mixed_with_new_keys(empty_paramete
                     },
                 ],
             },
-            True,
             {"ModelA"},
-        ),
-        # Legacy format: duplicate across list values in different entries
-        (
-            [
-                {"semantic_model_name": ["ModelA", "ModelB"], "connection_id": "00000000-0000-0000-0000-000000000001"},
-                {"semantic_model_name": ["ModelB", "ModelC"], "connection_id": "00000000-0000-0000-0000-000000000002"},
-            ],
-            False,
-            {"ModelB"},
         ),
     ],
     ids=[
-        "new_format_duplicate",
-        "new_format_no_duplicate",
-        "legacy_duplicate",
-        "legacy_no_duplicate",
-        "new_format_duplicate_within_list",
-        "legacy_duplicate_across_lists",
+        "duplicate",
+        "no_duplicate",
+        "duplicate_within_list",
     ],
 )
-def test_check_duplicate_semantic_model_names(empty_parameter, param_value, is_new_format, expected_duplicates, caplog):
+def test_check_duplicate_semantic_model_names(empty_parameter, param_value, expected_duplicates, caplog):
     """Test that _check_duplicate_semantic_model_names warns on duplicate names."""
     import logging
 
     with caplog.at_level(logging.WARNING):
-        empty_parameter._check_duplicate_semantic_model_names(param_value, is_new_format)
+        empty_parameter._check_duplicate_semantic_model_names(param_value)
 
     if expected_duplicates:
         expected_msg = constants.PARAMETER_MSGS["duplicate_semantic_model"].format(
