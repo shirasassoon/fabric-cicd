@@ -1,0 +1,8 @@
+kind: breaking
+body: Deprecate legacy `gateway_binding` and list-based `semantic_model_binding` parameters
+time: 2026-03-22T11:06:18.0226247+02:00
+custom:
+    Author: shirasassoon
+    AuthorLink: https://github.com/shirasassoon
+    Issue: "896"
+    IssueLink: https://github.com/microsoft/fabric-cicd/issues/896
