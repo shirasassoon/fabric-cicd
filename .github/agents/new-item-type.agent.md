@@ -34,31 +34,31 @@ Before starting, gather the following information about the new item type:
 
 ### Core Information (always gather before starting)
 
-| Question                                                              | Example   |
-| --------------------------------------------------------------------- | --------- |
-| **Display name** (PascalCase, as used by Fabric API)                  | `CopyJob` |
-| **Supported in source control / Git integration**                     | Yes / No  |
-| **Fabric API supports definition deployment** (create/update via API) | Yes / No  |
-| **Supports service principal (SPN) authentication**                   | Yes / No  |
+| Information                                                | Example      | Required |
+| ---------------------------------------------------------- | ------------ | -------- |
+| **Display name** (PascalCase, as used by Fabric API)       | `CopyJob`    | ✅       |
+| **Supported in source control / Git integration**          | Yes / No     | ✅       |
+| **Fabric API supports deployment** (create/update via API) | Yes / No     | ✅       |
+| **Deployment type** (full definition or shell-only)        | Full / Shell | ✅       |
+| **Supports service principal (SPN) authentication**        | Yes / No     | ✅       |
 
 ### Additional Details (gather when relevant to the item type)
 
-| Question                                                         | Example                                             | When to Ask                                                          |
-| ---------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------- |
-| **Shell-only publish** (metadata only, no definition deployment) | Lakehouse, Warehouse                                | If the item has no definition — only the shell (metadata) is created |
-| **Destructive unpublish** (data loss on delete)                  | Lakehouse, Eventhouse                               | If deleting the item destroys user data                              |
-| **Definition format**                                            | `ipynb`, `SparkJobDefinitionV2`                     | If the item uses a non-standard API format                           |
-| **Dependencies on other item types**                             | Eventhouse → KQLDatabase                            | If the item depends on another item type existing first              |
-| **Intra-type dependencies**                                      | Pipeline invokes another pipeline                   | If items of this type can reference each other                       |
-| **Exclude paths during publish**                                 | `.pbi/`, `.children/`                               | If certain files within the item folder should be skipped            |
-| **Custom deployment logic**                                      | Creation payload, post-publish binding, async check | If the item needs special handling beyond standard publish           |
+| Information                                     | Example                                             | Detail                                                     |
+| ----------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| **Destructive unpublish** (data loss on delete) | Lakehouse, Eventhouse                               | If deleting the item destroys user data                    |
+| **Alternate Definition format**                 | `ipynb`, `SparkJobDefinitionV2`                     | If the item uses a non-standard API format                 |
+| **Dependencies on other item types**            | Eventhouse → KQLDatabase                            | If the item depends on another item type existing first    |
+| **Intra-type dependencies**                     | Pipeline invokes another pipeline                   | If items of this type can reference each other             |
+| **Exclude paths during publish**                | `.pbi/`, `.children/`                               | If certain files within the item folder should be skipped  |
+| **Custom deployment logic**                     | Creation payload, post-publish binding, async check | If the item needs special handling beyond standard publish |
 
 ### Eligibility Gates
 
 Before proceeding, confirm all of the following. If any gate fails, **stop** — the item type cannot be onboarded.
 
 1. The item type must be supported in source control / Git integration. See [supported item types for Git integration](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/item-definition-overview).
-2. The Fabric API must support definition deployment for the item type (or it must be a shell-only item like Lakehouse/Warehouse). Search the [Fabric REST API docs](https://learn.microsoft.com/en-us/rest/api/fabric/) to confirm.
+2. The Fabric API must support deployment for the item type — either full definition deployment or shell-only creation (like Lakehouse/Warehouse). Search the [Fabric REST API docs](https://learn.microsoft.com/en-us/rest/api/fabric/) to confirm.
 3. The Fabric API must support service principal (SPN) authentication for the item type's deployment operations. fabric-cicd is primarily used in CI/CD pipelines where SPN is the standard authentication method.
 
 **Exceptions:** If there is strong justification for onboarding an item type that fails a gate (e.g., Notebook `.ipynb` format is not source-controlled but is supported due to strong user demand), the exception must be approved by the fabric-cicd team and documented as a known limitation in `docs/how_to/item_types.md`.
