@@ -463,7 +463,7 @@ class Parameter:
         connection_id must be a dict with environment keys (e.g., DEV, PPE, PROD) or '_ALL_'.
         """
         param_value = self.environment_parameter.get(param_name)
-        valid_keys = {"default", "models"}
+        valid_keys = self.PARAMETER_KEYS.get(param_name, {}).get("maximum", set())
 
         if not isinstance(param_value, dict):
             return False, constants.PARAMETER_MSGS["invalid data type"].format(param_name, "dictionary", param_name)
