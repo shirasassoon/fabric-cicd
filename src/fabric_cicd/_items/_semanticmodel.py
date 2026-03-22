@@ -234,7 +234,7 @@ class SemanticModelPublisher(ItemPublisher):
         else:
             logger.warning(
                 f"Invalid 'semantic_model_binding' type: {type(semantic_model_binding).__name__}. "
-                "Expected list or dict. Skipping semantic model binding."
+                "Expected dict. Skipping semantic model binding."
             )
             return
 
