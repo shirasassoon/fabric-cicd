@@ -576,7 +576,7 @@ class TestParameterUtilities:
         invalid_dict = {
             "find_replace": "not a list",
             "key_value_replace": [{"find_key": "$.test"}],
-            "semantic_model_binding": "not a list",
+            "semantic_model_binding": "not a dict",
         }
         assert is_valid_structure(invalid_dict) is False
         assert is_valid_structure(invalid_dict, "find_replace") is False
@@ -586,6 +586,12 @@ class TestParameterUtilities:
             "unknown_param": [{"test": "value"}],
         }
         assert is_valid_structure(missing_dict) is False
+
+        # Test that old list format is now invalid for semantic_model_binding
+        assert (
+            is_valid_structure({"semantic_model_binding": [{"connection_id": "test"}]}, "semantic_model_binding")
+            is False
+        )
 
         # Test with empty dict
         assert is_valid_structure({}) is False
