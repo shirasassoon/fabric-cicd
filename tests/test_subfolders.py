@@ -9,7 +9,6 @@ import re
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from fixtures.credentials import DummyTokenCredential
 
 from fabric_cicd.fabric_workspace import FabricWorkspace

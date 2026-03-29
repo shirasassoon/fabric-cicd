@@ -11,13 +11,13 @@ from typing import Optional
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fixtures.credentials import DummyTokenCredential
 
 import fabric_cicd.publish as publish
 from fabric_cicd import constants
 from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._items._notebook import NotebookPublisher
 from fabric_cicd.constants import API_FORMAT_MAPPING, ItemType
-from fixtures.credentials import DummyTokenCredential
 from fabric_cicd.fabric_workspace import FabricWorkspace
 
 # =============================================================================

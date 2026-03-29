@@ -9,12 +9,11 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fixtures.credentials import DummyTokenCredential
 
 import fabric_cicd.constants as constants
 import fabric_cicd.publish as publish
 from fabric_cicd import append_feature_flag
-from fixtures.credentials import DummyTokenCredential
-
 from fabric_cicd.fabric_workspace import FabricWorkspace
 
 
