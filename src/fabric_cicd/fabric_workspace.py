@@ -102,7 +102,7 @@ class FabricWorkspace:
 
         if token_credential is None:
             if _is_fabric_runtime():
-                token_credential = _generate_fabric_credential()
+                token_credential = validate_token_credential(_generate_fabric_credential())
                 logger.debug("Running in Fabric runtime - using generated Fabric credential for authentication.")
             else:
                 msg = "A TokenCredential is required to authenticate API requests. Please pass a 'token_credential' (e.g., AzureCliCredential, ClientSecretCredential)."
