@@ -13,6 +13,8 @@ import pytest
 import fabric_cicd.constants as constants
 import fabric_cicd.publish as publish
 from fabric_cicd import append_feature_flag
+from fixtures.credentials import DummyTokenCredential
+
 from fabric_cicd.fabric_workspace import FabricWorkspace
 
 
@@ -91,6 +93,7 @@ def test_workspace_with_notebook(mock_endpoint):
                 workspace_id="12345678-1234-5678-abcd-1234567890ab",
                 repository_directory=str(temp_path),
                 item_type_in_scope=["Notebook"],
+                token_credential=DummyTokenCredential(),
             )
             # Manually set up repository items since we're patching the refresh methods
             workspace.repository_items = {

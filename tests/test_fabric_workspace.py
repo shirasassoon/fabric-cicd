@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
+from fixtures.credentials import DummyTokenCredential
+
 from fabric_cicd.fabric_workspace import FabricWorkspace, constants
 
 
@@ -120,6 +122,7 @@ def patched_fabric_workspace(mock_endpoint):
                 workspace_id=workspace_id,
                 repository_directory=repository_directory,
                 item_type_in_scope=item_type_in_scope,
+                token_credential=DummyTokenCredential(),
                 **kwargs,
             )
             # Call refresh methods to populate workspace data
@@ -1031,6 +1034,7 @@ def test_base_api_url_kwarg_raises_error(temp_workspace_dir, valid_workspace_id)
                 workspace_id=valid_workspace_id,
                 repository_directory=str(temp_workspace_dir),
                 base_api_url="https://custom.api.url",
+                token_credential=DummyTokenCredential(),
             )
 
         # Verify the error message contains the expected text
