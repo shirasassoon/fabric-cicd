@@ -32,24 +32,48 @@ Before starting, gather the following information about the new item type:
 
 ### Additional Details (gather when relevant to the item type)
 
-| Information                                     | Example                                             | Detail                                                                             |
-| ----------------------------------------------- | --------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| **Alternate Definition format**                 | `ipynb`, `SparkJobDefinitionV2`                     | If the item uses a non-standard API format                                         |
-| **Custom deployment logic**                     | Creation payload, post-publish binding, async check | If the item needs special handling beyond standard publish                         |
-| **Custom file content transformation**          | Rewrite cross-item refs, inject deployed values     | If file contents need item-type-specific changes the generic pipeline can't handle |
-| **Dependencies on other item types**            | Eventhouse → KQLDatabase                            | If the item depends on another item type existing first                            |
-| **Destructive unpublish** (data loss on delete) | Lakehouse, Eventhouse                               | If deleting the item destroys user data                                            |
-| **Exclude paths during publish**                | `.pbi/`, `.children/`                               | If certain files within the item folder should be skipped                          |
-| **Intra-type dependencies**                     | Pipeline invokes another pipeline                   | If items of this type can reference each other                                     |
-| **Specialized parameterization**                | `spark_pool`, `semantic_model_binding`              | If the item needs a dedicated `parameter.yml` key beyond generic find/replace      |
+| Information                                     | Example                                             | Detail                                                                                                                                                                                                                          |
+| ----------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Alternate Definition format**                 | `ipynb`, `SparkJobDefinitionV2`                     | If the item uses a non-standard API format                                                                                                                                                                                      |
+| **Custom deployment logic**                     | Creation payload, post-publish binding, async check | If the item needs special handling beyond standard publish                                                                                                                                                                      |
+| **Custom file content transformation**          | Rewrite cross-item refs, inject deployed values     | If file contents need item-type-specific changes the generic pipeline can't handle                                                                                                                                              |
+| **Dependencies on other item types**            | Eventhouse → KQLDatabase, SemanticModel → Report    | Which existing item types must be deployed **before** this one? Which existing item types depend on this one being deployed **first**? Check definition files for references (GUIDs, paths, connection strings) to other types. |
+| **Destructive unpublish** (data loss on delete) | Lakehouse, Eventhouse                               | If deleting the item destroys user data                                                                                                                                                                                         |
+| **Exclude paths during publish**                | `.pbi/`, `.children/`                               | If certain files within the item folder should be skipped                                                                                                                                                                       |
+| **Intra-type dependencies**                     | Pipeline invokes another pipeline                   | If items of this type can reference each other                                                                                                                                                                                  |
+| **Runtime property references**                 | SQL endpoint URI, query service URI, connection ID  | If the item's definition needs runtime properties from already-deployed items (see `PROPERTY_PATH_ATTR_MAPPING` in `constants.py`)                                                                                              |
+| **Specialized parameterization**                | `spark_pool`, `semantic_model_binding`              | If the item needs a dedicated `parameter.yml` key beyond generic find/replace                                                                                                                                                   |
 
 ### Eligibility Gates
 
 Before proceeding, confirm all of the following. If any gate fails, **stop** — the item type cannot be onboarded.
 
-1. The item type must be supported in source control / Git integration. See [supported item types for Git integration](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/item-definition-overview).
-2. The Fabric API must support deployment for the item type — either full definition deployment or shell-only creation (like Lakehouse/Warehouse). Search the [Fabric REST API docs](https://learn.microsoft.com/en-us/rest/api/fabric/) to confirm.
-3. The Fabric API must support service principal (SPN) authentication for the item type's deployment operations. fabric-cicd is primarily used in CI/CD pipelines where SPN is the standard authentication method. Check the item type's page in the [Fabric REST API docs](https://learn.microsoft.com/en-us/rest/api/fabric/) — supported authentication types are listed per API operation.
+1. The item type must be supported in source control / Git integration. Fetch the [item definition overview](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/item-definition-overview) page and check if the item type appears in the **"Definition Details for Supported Item Types"** list.
+2. The Fabric API must support deployment for the item type — either full definition deployment or shell-only creation (like Lakehouse/Warehouse). Verify using the steps in **"How to verify gates 2 and 3"** below.
+3. The Fabric API must support service principal (SPN) authentication for the item type's deployment operations. fabric-cicd is primarily used in CI/CD pipelines where SPN is the standard authentication method. Verify using the steps in **"How to verify gates 2 and 3"** below.
+
+#### How to verify gates 2 and 3
+
+The Fabric REST API docs follow a predictable URL pattern. Use these steps to directly navigate to the right pages instead of searching the generic API root:
+
+1. **Construct the item type's API items page URL:**
+   `https://learn.microsoft.com/en-us/rest/api/fabric/{itemtype-lowercase}/items`
+   where `{itemtype-lowercase}` is the PascalCase item type name lowercased with no separators.
+    - Examples: `SnowflakeDatabase` → `snowflakedatabase`, `DataPipeline` → `datapipeline`, `KQLDatabase` → `kqldatabase`
+
+2. **Fetch that page and confirm deployment operations exist (Gate 2):**
+    - Full definition support: Look for **"Get [Item] Definition"** and **"Update [Item] Definition"** operations in the Operations table.
+    - Shell-only support: At minimum a **"Create [Item]"** operation must exist.
+    - If neither exists, Gate 2 fails.
+
+3. **Construct the Create endpoint URL to check SPN support (Gate 3):**
+   `https://learn.microsoft.com/en-us/rest/api/fabric/{itemtype-lowercase}/items/create-{item-type-kebab-case}`
+   where `{item-type-kebab-case}` inserts hyphens between PascalCase words and lowercases everything.
+    - Examples: `SnowflakeDatabase` → `create-snowflake-database`, `DataPipeline` → `create-data-pipeline`, `KQLDatabase` → `create-kql-database`
+
+4. **Fetch the Create endpoint page and find the "Microsoft Entra supported identities" section.** Confirm the table shows **"Service principal and Managed identities: Yes"**. If it shows "No" or the section is missing, Gate 3 fails.
+
+**Important:** You MUST fetch the actual API pages listed above. Do not guess or assume gate results based on the item type name alone. If a URL returns a 404, try alternate kebab-case patterns (e.g., `graphqlapi` instead of `graph-q-l-api`), or fall back to fetching the [Fabric REST API root](https://learn.microsoft.com/en-us/rest/api/fabric/) and navigating to the item type's section.
 
 **Exceptions:** Gates 1 and 3 may be excepted on a case-by-case basis with fabric-cicd team approval — for example, Notebook `.ipynb` format is supported despite not being source-controlled (gate 1 exception). Gate 2 (API deployment support) has no exceptions. Any approved exception must be documented as a known limitation in `docs/how_to/item_types.md`.
 
@@ -112,6 +136,28 @@ class ItemType(str, Enum):
 
 Choose the correct position based on the item's dependencies. Items that other items depend on must come **earlier** in the order. The unpublish order is automatically the reverse.
 
+##### How to determine the correct position
+
+1. **Read the current `SERIAL_ITEM_PUBLISH_ORDER`** in `constants.py` to see the latest order.
+2. **Identify upstream dependencies** — types the new item depends on. Check definition files for references (GUIDs, paths, connection strings) and ask the requestor. The new item must go **after** the highest-numbered upstream dependency.
+3. **Identify downstream dependents** — existing types that will depend on the new item. The new item must go **before** the lowest-numbered downstream dependent.
+4. Place the new item anywhere in the valid range between those two bounds. If there is no gap, renumber existing entries to make room.
+5. If the new item has **no dependencies in either direction**, place it at the end of the order.
+6. **When in doubt, ask the requestor** — do not guess dependency relationships.
+
+##### Existing inter-type dependency map
+
+Use this map to understand **why** existing items are ordered as they are, so you can identify where dependencies exist for the new item type:
+
+| Upstream (publishes first)        | Downstream (publishes after)               | Relationship                                      |
+| --------------------------------- | ------------------------------------------ | ------------------------------------------------- |
+| Lakehouse, Warehouse, SQLDatabase | Notebook, SparkJobDefinition, DataPipeline | Storage endpoints referenced via parameterization |
+| Eventhouse                        | KQLDatabase, KQLQueryset, KQLDashboard     | KQL items reference Eventhouse query service URI  |
+| SemanticModel                     | Report                                     | Reports reference SemanticModel via relative path |
+| Environment                       | Notebook, SparkJobDefinition               | Runtime configuration reference                   |
+| VariableLibrary, MirroredDatabase | Most other types                           | Foundational items, rarely depend on others       |
+| (most other types)                | DataPipeline, Dataflow, CopyJob            | Orchestration items publish last                  |
+
 #### 1c. Optionally add to `SHELL_ONLY_PUBLISH`
 
 If the API does **not** support item definition and only supports metadata (shell) deployment — like Lakehouse, Warehouse, SQL Database, ML Experiment.
@@ -171,6 +217,19 @@ For more complex items, you can override these methods from `ItemPublisher`:
 | `pre_publish_all()`             | Pre-publish checks                      | e.g., Environment publish state check                    |
 | `post_publish_all()`            | Post-publish actions                    | e.g., Semantic Model connection binding                  |
 | `post_publish_all_check()`      | Async publish state verification        | **Must also set `has_async_publish_check = True`**       |
+
+#### Inter-Type Dependency Handling
+
+If the new item's definition contains references to other item types that need resolving at deploy time, implement one of these patterns:
+
+| Pattern                          | When to use                                                                  | Example                               | Key mechanism                                                                                                                          |
+| -------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| **Property attribute lookup**    | Needs a runtime property (SQL endpoint, query URI) from an upstream item     | `_kqlqueryset.py`, `_kqldashboard.py` | `pre_publish_all()` → `_refresh_deployed_items()`, then look up `workspace_obj.deployed_items[upstream_type]` in `func_process_file()` |
+| **Path-to-ID resolution**        | Definition contains a relative path to another item type                     | `_report.py`                          | `workspace_obj._convert_path_to_id(upstream_type, path)` in `func_process_file()`                                                      |
+| **ID-to-name resolution**        | Definition contains GUIDs referencing another item type                      | `_datapipeline.py`                    | `workspace_obj._convert_id_to_name(item_type, guid, lookup_type)`                                                                      |
+| **Parameterization (automatic)** | Reference handled by `find_replace` / `key_value_replace` in `parameter.yml` | Most simple items                     | No publisher code needed                                                                                                               |
+
+If the new item is an **upstream dependency** (other existing items will reference it), check whether you need to add it to `PROPERTY_PATH_ATTR_MAPPING` in `constants.py` and whether existing downstream publishers need updates. Ask the requestor.
 
 #### Intra-Type Dependency Ordering (DAG)
 
@@ -244,11 +303,15 @@ Add a new section for the item type following the existing pattern.
 
 ---
 
-### Step 6 — Sample Files (Optional)
+### Step 6 — Sample Files and Deployment Validation
 
-**Directory:** `sample/workspace/`
+**Do not create sample files yourself.** Sample items must come from a real Fabric workspace exported via Git integration — the agent cannot generate valid definition files.
 
-If helpful, add sample workspace item files showing the expected directory structure for the new item type.
+Encourage the requestor to:
+
+1. **Add a sample item** to `sample/workspace/` by exporting an instance of the item type from a Fabric workspace connected to Git. The exported folder should follow the naming convention `{DisplayName}.{ItemType}/`.
+2. **Add the item type** to `item_type_in_scope` in `devtools/debug_local.py` and run a sample deployment against a real workspace to validate end-to-end behavior.
+3. **Add the item type** to `item_types_to_deploy` in `tests/test_integration_publish.py`. The HTTP trace (`tests/fixtures/http_trace.json.gz`) must also be regenerated against a real workspace — this is a manual step.
 
 ---
 
