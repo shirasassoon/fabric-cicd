@@ -3,7 +3,6 @@
 
 """Handles interactions with the Fabric API, including authentication and request management."""
 
-import base64
 import datetime
 import json
 import logging
@@ -12,7 +11,7 @@ import time
 from typing import Optional
 
 import requests
-from azure.core.credentials import AccessToken, TokenCredential
+from azure.core.credentials import TokenCredential
 from azure.core.exceptions import (
     ClientAuthenticationError,
 )

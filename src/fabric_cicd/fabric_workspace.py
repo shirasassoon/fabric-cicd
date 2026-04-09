@@ -103,8 +103,7 @@ class FabricWorkspace:
         if token_credential is None:
             msg = "A TokenCredential is required to authenticate API requests. Please pass a 'token_credential' (e.g., AzureCliCredential, ClientSecretCredential)."
             raise InputError(msg, logger)
-        else:
-            token_credential = validate_token_credential(token_credential)
+        token_credential = validate_token_credential(token_credential)
 
         # Initialize endpoint
         self.endpoint = FabricEndpoint(token_credential=token_credential)
