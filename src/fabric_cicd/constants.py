@@ -135,8 +135,6 @@ class FeatureFlag(str, Enum):
     """Set to enable selective publishing of shortcuts in a Lakehouse."""
     ENABLE_RESPONSE_COLLECTION = "enable_response_collection"
     """Set to enable collection of API responses during publish operations."""
-    DISABLE_PRINT_IDENTITY = "disable_print_identity"
-    """Set to disable printing the executing identity name."""
 
 
 class OperationType(str, Enum):

@@ -30,7 +30,6 @@ For scenarios that aren't supported by default, fabric-cicd offers feature flags
 from fabric_cicd import append_feature_flag
 append_feature_flag("enable_lakehouse_unpublish")
 append_feature_flag("enable_warehouse_unpublish")
-append_feature_flag("disable_print_identity")
 append_feature_flag("enable_environment_variable_replacement")
 append_feature_flag("enable_response_collection")
 ```
