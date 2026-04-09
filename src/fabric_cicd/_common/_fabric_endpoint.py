@@ -158,46 +158,15 @@ class FabricEndpoint:
             resource_url = "https://api.fabric.microsoft.com/.default"
 
             try:
-                self.aad_token = self.token_credential.get_token(resource_url).token
+                access_token = self.token_credential.get_token(resource_url)
+                self.aad_token = access_token.token
+                self.aad_token_expiration = datetime.datetime.fromtimestamp(access_token.expires_on, tz=datetime.timezone.utc)
             except ClientAuthenticationError as e:
                 msg = f"Failed to acquire AAD token. {e}"
                 raise TokenError(msg, logger) from e
             except Exception as e:
                 msg = f"An unexpected error occurred when generating the AAD token. {e}"
                 raise TokenError(msg, logger) from e
-
-            try:
-                decoded_token = _decode_jwt(self.aad_token)
-                expiration = decoded_token.get("exp")
-                upn = decoded_token.get("upn")
-                appid = decoded_token.get("appid")
-                oid = decoded_token.get("oid")
-
-                if expiration:
-                    # Must be timezone-aware (UTC) to match the timezone-aware datetime used in comparison
-                    self.aad_token_expiration = datetime.datetime.fromtimestamp(expiration, tz=datetime.timezone.utc)
-                else:
-                    msg = "Token does not contain expiration claim."
-                    raise TokenError(msg, logger)
-
-                if upn:
-                    _log_executing_identity(f"Executing as User '{upn}'")
-                    self.upn_auth = True
-                else:
-                    self.upn_auth = False
-                    if appid:
-                        _log_executing_identity(f"Executing as Application Id '{appid}'")
-                    elif oid:
-                        _log_executing_identity(f"Executing as Object Id '{oid}'")
-
-            except Exception as e:
-                msg = f"An unexpected error occurred while decoding the credential token. {e}"
-                raise TokenError(msg, logger) from e
-
-
-def _log_executing_identity(msg: str) -> None:
-    if "disable_print_identity" not in constants.FEATURE_FLAG:
-        logger.info(msg)
 
 
 def _handle_response(
