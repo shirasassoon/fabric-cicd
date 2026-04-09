@@ -36,7 +36,6 @@ def mock_endpoint():
         return {"body": {"value": []}}
 
     mock.invoke.side_effect = mock_invoke
-    mock.upn_auth = True
     return mock
 
 
@@ -1065,15 +1064,14 @@ def test_no_token_credential_outside_fabric_runtime_raises_error(temp_workspace_
     with platform_file.open("w", encoding="utf-8") as f:
         json.dump(platform_content, f)
 
-    with patch("fabric_cicd.fabric_workspace._is_fabric_runtime", return_value=False):
-        with pytest.raises(InputError) as exc_info:
-            FabricWorkspace(
-                workspace_id=valid_workspace_id,
-                repository_directory=str(temp_workspace_dir),
-            )
+    with pytest.raises(InputError) as exc_info:
+        FabricWorkspace(
+            workspace_id=valid_workspace_id,
+            repository_directory=str(temp_workspace_dir),
+        )
 
-        assert "TokenCredential is required" in str(exc_info.value)
-        assert "token_credential" in str(exc_info.value)
+    assert "TokenCredential is required" in str(exc_info.value)
+    assert "token_credential" in str(exc_info.value)
 
 
 def test_base_api_url_kwarg_raises_error(temp_workspace_dir, valid_workspace_id):

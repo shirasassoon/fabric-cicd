@@ -135,7 +135,7 @@ Traceback (most recent call last):
     - CI/CD pipelines with OIDC / workload identity federation: `WorkloadIdentityCredential` (secretless; recommended for GitHub Actions and Azure DevOps with federated credentials)
     - CI/CD pipelines with service principals: `ClientSecretCredential` (requires client ID, secret, and tenant ID)
     - CI/CD pipelines with managed identity: `ManagedIdentityCredential` (requires Azure-hosted self-hosted runners)
-    - Fabric Notebooks: Authentication is handled automatically within the Fabric runtime (no explicit credential required unless overriding with a specific identity)
+    - Fabric Notebooks: Provide an explicit credential. See Authentication Examples for details.
 
 2. Verify authentication setup:
     ```bash

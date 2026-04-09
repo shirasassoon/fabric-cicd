@@ -17,7 +17,7 @@ from azure.core.credentials import TokenCredential
 from fabric_cicd import constants
 from fabric_cicd._common._check_utils import check_regex, check_valid_json_content, check_valid_yaml_content
 from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError, ParameterFileError, ParsingError
-from fabric_cicd._common._fabric_endpoint import FabricEndpoint, _generate_fabric_credential, _is_fabric_runtime
+from fabric_cicd._common._fabric_endpoint import FabricEndpoint
 from fabric_cicd._common._item import Item
 from fabric_cicd._common._logging import log_header
 from fabric_cicd.constants import FeatureFlag, ItemType
@@ -101,12 +101,8 @@ class FabricWorkspace:
         )
 
         if token_credential is None:
-            if _is_fabric_runtime():
-                token_credential = validate_token_credential(_generate_fabric_credential())
-                logger.debug("Running in Fabric runtime - using generated Fabric credential for authentication.")
-            else:
-                msg = "A TokenCredential is required to authenticate API requests. Please pass a 'token_credential' (e.g., AzureCliCredential, ClientSecretCredential)."
-                raise InputError(msg, logger)
+            msg = "A TokenCredential is required to authenticate API requests. Please pass a 'token_credential' (e.g., AzureCliCredential, ClientSecretCredential)."
+            raise InputError(msg, logger)
         else:
             token_credential = validate_token_credential(token_credential)
 
