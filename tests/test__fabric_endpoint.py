@@ -379,6 +379,16 @@ def test_handle_response_longrunning_exception(exception_match, response_json):
             0.0,
         ),
         (429, 5, True, {"Retry-After": "10"}, {}, r"Maximum execution duration \(0 seconds\) exceeded", 0, 0.0),
+        (
+            200,
+            5,
+            True,
+            {},
+            {"status": "Running"},
+            r"Maximum execution duration \(0 seconds\) exceeded",
+            0,
+            0.0,
+        ),
     ],
     ids=[
         "unauthorized",
@@ -386,6 +396,7 @@ def test_handle_response_longrunning_exception(exception_match, response_json):
         "failed_library_removal",
         "retry_500",
         "retry_429",
+        "long_running_timeout",
     ],
 )
 def test_handle_response_exceptions(
