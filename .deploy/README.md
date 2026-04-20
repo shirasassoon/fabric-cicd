@@ -1,12 +1,12 @@
 # Enterprise Fabric Deployment Demo
 
-This directory contains the deployment script and setup for an end-to-end Microsoft Fabric workspace deployment using [fabric-cicd](https://github.com/microsoft/fabric-cicd) and GitHub Actions with a Service Principal (SPN).
+This directory contains the deployment script and setup for an end-to-end Microsoft Fabric workspace deployment using [fabric-cicd](https://github.com/microsoft/fabric-cicd) and GitHub Actions with a Service Principal (SPN) authenticated via OIDC Workload Identity Federation.
 
 ## Overview
 
 The deployment workflow (`../.github/workflows/deploy_to_fabric.yml`) uses the Python script `deploy_fabric_workspace.py` to:
 
-1. Authenticate to Azure using a Service Principal (`ClientSecretCredential`).
+1. Authenticate to Azure using OIDC Workload Identity Federation (no client secret required).
 2. Initialize a `FabricWorkspace` pointing at the `sample/workspace/` items in this repository.
 3. **Publish** all in-scope items (Notebooks, DataPipelines, Environments) to the target Fabric workspace.
 4. **Unpublish** any orphaned items that exist in the workspace but are no longer in the repository.
@@ -16,27 +16,30 @@ The deployment workflow (`../.github/workflows/deploy_to_fabric.yml`) uses the P
 ### 1. Azure AD App Registration (Service Principal)
 
 - Register an application in Azure AD (Entra ID).
-- Create a client secret for the application.
-- Note the **Tenant ID**, **Client ID**, and **Client Secret**.
+- **Do not create a client secret.** Instead, configure a **Federated Credential**:
+  - In Azure Portal → App registrations → your app → **Certificates & secrets → Federated credentials → Add credential**
+  - Scenario: **GitHub Actions deploying Azure resources**
+  - Organization: your GitHub org or username
+  - Repository: `fabric-cicd`
+  - Entity type: **Environment**
+  - Environment name: `PPE` (repeat for `PROD`)
+- Note the **Tenant ID** and **Client ID**.
 
 ### 2. Fabric Workspace Permissions
 
 - Grant the Service Principal **Contributor** (or Admin) access to the target Fabric workspace. This can be done from the Fabric portal under Workspace Settings → Manage Access.
 
-### 3. GitHub Repository Secrets
+### 3. GitHub Environments and Secrets
 
-Add the following secrets in **GitHub → Settings → Secrets and variables → Actions**:
+Create a GitHub Environment for each target (`PPE`, `PROD`) at **GitHub → Settings → Environments**, then add the following secrets to each environment:
 
 | Secret Name           | Description                                     |
 | --------------------- | ----------------------------------------------- |
 | `AZURE_TENANT_ID`     | Azure AD tenant ID                              |
 | `AZURE_CLIENT_ID`     | Service Principal application (client) ID       |
-| `AZURE_CLIENT_SECRET` | Service Principal client secret                 |
 | `FABRIC_WORKSPACE_ID` | Target Microsoft Fabric workspace ID (GUID)     |
 
-### 4. (Optional) GitHub Environments
-
-The workflow references a GitHub environment matching the selected deployment target (`PPE` or `PROD`). You can configure [GitHub environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment) with environment-specific secrets and protection rules (e.g., required reviewers) for a staged deployment.
+> No `AZURE_CLIENT_SECRET` needed — OIDC Workload Identity Federation eliminates the need for long-lived secrets.
 
 ## How to Run
 
@@ -46,7 +49,7 @@ The workflow references a GitHub environment matching the selected deployment ta
 4. Choose the target environment (`PPE` or `PROD`).
 5. Click **Run workflow** to start the deployment.
 
-The workflow will check out the repo, install `fabric-cicd`, and execute the deployment script against the configured Fabric workspace.
+The workflow will check out the repo, log in to Azure via OIDC, install `fabric-cicd`, and execute the deployment script against the configured Fabric workspace.
 
 ## Customization
 
@@ -60,4 +63,4 @@ The sample workspace includes a `parameter.yml` file that supports environment-s
 
 ### Enabling Debug Logging
 
-Enable verbose output by enabling **debug logging** in the GitHub Actions run (Settings → Actions → Enable debug logging), or by setting the `ACTIONS_STEP_DEBUG` secret to `true`.
+Enable verbose output by enabling **debug logging** in the GitHub Actions run (Settings → Actions → Enable debug logging), or by setting the `ACTIONS_STEP_DEBUG` secret to `true.
