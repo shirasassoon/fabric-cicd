@@ -5,14 +5,13 @@
 Enterprise deployment script for Microsoft Fabric workspace items.
 
 This script is designed to run in GitHub Actions using a Service Principal (SPN)
-with ClientSecretCredential for authentication. It deploys all in-scope Fabric
-items from the sample workspace to a target Fabric workspace, then cleans up
-any orphaned items not present in the repository.
+authenticated via OIDC Workload Identity Federation (no client secret required).
+It deploys all in-scope Fabric items from the sample workspace to a target Fabric
+workspace, then cleans up any orphaned items not present in the repository.
 
 Required environment variables (set via GitHub Actions secrets):
     AZURE_TENANT_ID       - Azure AD tenant ID
     AZURE_CLIENT_ID       - Service principal (SPN) client/application ID
-    AZURE_CLIENT_SECRET   - Service principal client secret
     FABRIC_WORKSPACE_ID   - Target Fabric workspace ID
     ENVIRONMENT           - Deployment environment name (e.g., PPE, PROD)
 """
@@ -24,12 +23,11 @@ import os
 import sys
 from pathlib import Path
 
-from azure.identity import ClientSecretCredential
+from azure.identity import AzureCliCredential
 
 from fabric_cicd import FabricWorkspace, change_log_level, publish_all_items, unpublish_all_orphan_items
 
 logger = logging.getLogger(__name__)
-
 
 def get_required_env(name: str) -> str:
     """Retrieve a required environment variable or exit with an error."""
@@ -39,23 +37,16 @@ def get_required_env(name: str) -> str:
         sys.exit(1)
     return value
 
-
 def main() -> None:
     """Run the end-to-end Fabric workspace deployment."""
     # Enable debug logging when ACTIONS_STEP_DEBUG is set in GitHub Actions
     if os.getenv("ACTIONS_STEP_DEBUG", "false").lower() == "true":
         change_log_level("DEBUG")
 
-    # --- Authentication via Service Principal ---
-    tenant_id = get_required_env("AZURE_TENANT_ID")
-    client_id = get_required_env("AZURE_CLIENT_ID")
-    client_secret = get_required_env("AZURE_CLIENT_SECRET")
-
-    token_credential = ClientSecretCredential(
-        tenant_id=tenant_id,
-        client_id=client_id,
-        client_secret=client_secret,
-    )
+    # --- Authentication via Azure CLI (OIDC Workload Identity Federation) ---
+    # AzureCliCredential reads the token from the Azure CLI session established
+    # by the azure/login@v2 action using OIDC. No client secret is required or stored.
+    token_credential = AzureCliCredential()
 
     # --- Deployment configuration ---
     workspace_id = get_required_env("FABRIC_WORKSPACE_ID")
@@ -92,7 +83,6 @@ def main() -> None:
     unpublish_all_orphan_items(target_workspace)
 
     logger.info("Deployment completed successfully.")
-
 
 if __name__ == "__main__":
     main()
