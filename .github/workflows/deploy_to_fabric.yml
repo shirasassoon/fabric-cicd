@@ -1,16 +1,18 @@
 name: Deploy to Fabric Workspace
 
 # This workflow demonstrates an enterprise end-to-end deployment of Microsoft
-# Fabric workspace items using fabric-cicd with a Service Principal (SPN).
+# Fabric workspace items using fabric-cicd with a Service Principal (SPN)
+# authenticated via OIDC Workload Identity Federation (no client secrets).
 #
 # Prerequisites:
-#   1. Register an Azure AD app (SPN) with a client secret.
-#   2. Grant the SPN "Contributor" role on the target Fabric workspace.
-#   3. Add the following secrets in GitHub → Settings → Secrets and variables → Actions:
+#   1. Register an Azure AD app (SPN).
+#   2. Configure a Federated Credential on the app for this GitHub repo/environment.
+#   3. Grant the SPN "Contributor" role on the target Fabric workspace.
+#   4. Add the following secrets to each GitHub Environment (PPE/PROD):
 #        AZURE_TENANT_ID      – Azure AD tenant ID
 #        AZURE_CLIENT_ID      – SPN application (client) ID
-#        AZURE_CLIENT_SECRET  – SPN client secret
 #        FABRIC_WORKSPACE_ID  – Target Fabric workspace ID
+#      (No AZURE_CLIENT_SECRET needed!)
 
 on:
   workflow_dispatch:
@@ -26,6 +28,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write  # Required for OIDC token request
 
 jobs:
   deploy:
@@ -36,6 +39,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Azure login via OIDC (Workload Identity Federation)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -49,9 +59,6 @@ jobs:
 
       - name: Deploy to Fabric workspace
         env:
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
           ENVIRONMENT: ${{ github.event.inputs.environment }}
         run: |
