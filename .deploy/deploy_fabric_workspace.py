@@ -58,23 +58,15 @@ def main() -> None:
     repo_root = Path(os.getenv("GITHUB_WORKSPACE", str(Path(__file__).resolve().parent.parent)))
     repository_directory = str(repo_root / "sample" / "workspace")
 
-    # Item types to deploy — covers the most common Fabric item types in the sample workspace
-    item_type_in_scope = [
-        "Notebook",
-        "DataPipeline",
-        "Environment",
-    ]
 
     logger.info("Starting deployment to workspace '%s' (environment: %s)", workspace_id, environment)
     logger.info("Repository directory: %s", repository_directory)
-    logger.info("Item types in scope: %s", item_type_in_scope)
 
     # --- Initialize workspace ---
     target_workspace = FabricWorkspace(
         workspace_id=workspace_id,
         environment=environment,
         repository_directory=repository_directory,
-        item_type_in_scope=item_type_in_scope,
         token_credential=token_credential,
     )
 
