@@ -1,0 +1,58 @@
+name: Deploy to Fabric Workspace
+
+# This workflow demonstrates an enterprise end-to-end deployment of Microsoft
+# Fabric workspace items using fabric-cicd with a Service Principal (SPN).
+#
+# Prerequisites:
+#   1. Register an Azure AD app (SPN) with a client secret.
+#   2. Grant the SPN "Contributor" role on the target Fabric workspace.
+#   3. Add the following secrets in GitHub → Settings → Secrets and variables → Actions:
+#        AZURE_TENANT_ID      – Azure AD tenant ID
+#        AZURE_CLIENT_ID      – SPN application (client) ID
+#        AZURE_CLIENT_SECRET  – SPN client secret
+#        FABRIC_WORKSPACE_ID  – Target Fabric workspace ID
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment (e.g., PPE, PROD)"
+        required: true
+        default: "PROD"
+        type: choice
+        options:
+          - PPE
+          - PROD
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy Fabric Items
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fabric-cicd
+
+      - name: Deploy to Fabric workspace
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
+          ENVIRONMENT: ${{ github.event.inputs.environment }}
+        run: |
+          python -u .deploy/deploy_fabric_workspace.py
