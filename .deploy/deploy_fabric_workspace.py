@@ -10,10 +10,11 @@ It deploys all in-scope Fabric items from the sample workspace to a target Fabri
 workspace, then cleans up any orphaned items not present in the repository.
 
 Required environment variables (set via GitHub Actions secrets):
-    AZURE_TENANT_ID       - Azure AD tenant ID
-    AZURE_CLIENT_ID       - Service principal (SPN) client/application ID
     FABRIC_WORKSPACE_ID   - Target Fabric workspace ID
     ENVIRONMENT           - Deployment environment name (e.g., PPE, PROD)
+
+Authentication is handled by the azure/login@v2 action using OIDC before this
+script runs. AzureCliCredential reads the token from that CLI session automatically.
 """
 
 from __future__ import annotations
@@ -36,6 +37,7 @@ def get_required_env(name: str) -> str:
         logger.error("Required environment variable '%s' is not set.", name)
         sys.exit(1)
     return value
+
 
 def main() -> None:
     """Run the end-to-end Fabric workspace deployment."""
@@ -83,6 +85,7 @@ def main() -> None:
     unpublish_all_orphan_items(target_workspace)
 
     logger.info("Deployment completed successfully.")
+
 
 if __name__ == "__main__":
     main()
