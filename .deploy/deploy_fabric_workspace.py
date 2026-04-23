@@ -42,7 +42,7 @@ def get_required_env(name: str) -> str:
 def main() -> None:
     """Run the end-to-end Fabric workspace deployment."""
     # Enable debug logging when ACTIONS_STEP_DEBUG is set in GitHub Actions
-    if os.getenv("ACTIONS_STEP_DEBUG", "false").lower() == "true":
+    if os.getenv("ACTIONS_STEP_DEBUG", "").lower() in ("true", "1"):
         change_log_level("DEBUG")
 
     # --- Authentication via Azure CLI (OIDC Workload Identity Federation) ---
