@@ -63,3 +63,11 @@ jobs:
           ENVIRONMENT: ${{ github.event.inputs.environment }}
         run: |
           python -u .deploy/deploy_fabric_workspace.py
+
+      - name: Upload error log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fabric-cicd-error-log
+          path: fabric_cicd.error.log
+          if-no-files-found: ignore
