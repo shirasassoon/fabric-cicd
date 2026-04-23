@@ -30,6 +30,7 @@ from fabric_cicd import FabricWorkspace, change_log_level, publish_all_items, un
 
 logger = logging.getLogger(__name__)
 
+
 def get_required_env(name: str) -> str:
     """Retrieve a required environment variable or exit with an error."""
     value = os.getenv(name)
@@ -41,9 +42,8 @@ def get_required_env(name: str) -> str:
 
 def main() -> None:
     """Run the end-to-end Fabric workspace deployment."""
-    # Enable debug logging when ACTIONS_STEP_DEBUG is set in GitHub Actions
-    if os.getenv("ACTIONS_STEP_DEBUG", "").lower() in ("true", "1"):
-        change_log_level("DEBUG")
+    # Enable debug logging
+    change_log_level()
 
     # --- Authentication via Azure CLI (OIDC Workload Identity Federation) ---
     # AzureCliCredential reads the token from the Azure CLI session established
@@ -57,7 +57,6 @@ def main() -> None:
     # Resolve the sample workspace directory relative to the repo root
     repo_root = Path(os.getenv("GITHUB_WORKSPACE", str(Path(__file__).resolve().parent.parent)))
     repository_directory = str(repo_root / "sample" / "workspace")
-
 
     logger.info("Starting deployment to workspace '%s' (environment: %s)", workspace_id, environment)
     logger.info("Repository directory: %s", repository_directory)
