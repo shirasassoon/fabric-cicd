@@ -1,17 +1,17 @@
-import importlib.util
+from importlib import util
 from pathlib import Path
 
 import pytest
-
 
 SCRIPT_PATH = Path(__file__).resolve().parent.parent / ".deploy" / "deploy_fabric_workspace.py"
 
 
 @pytest.fixture
 def deploy_module():
-    spec = importlib.util.spec_from_file_location("deploy_fabric_workspace_script", SCRIPT_PATH)
-    module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
+    spec = util.spec_from_file_location("deploy_fabric_workspace_script", SCRIPT_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
