@@ -15,7 +15,7 @@ permissions:
 jobs:
     deploy-demo:
         runs-on: ubuntu-latest
-        environment: e2e-demo
+        environment: PPE
 
         steps:
             - name: Checkout
