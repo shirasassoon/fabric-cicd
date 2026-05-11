@@ -32,13 +32,19 @@ jobs:
             - name: Install project
               run: uv sync
 
+            - name: Validate federated auth
+              env:
+                  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+                  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+              run: uv run python -u .deploy/validate_federated_auth.py
+
             - name: Deploy demo to Fabric
               env:
                   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
                   AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
                   FABRIC_WORKSPACE_ID: ${{ secrets.FABRIC_WORKSPACE_ID }}
                   FABRIC_TARGET_ENVIRONMENT: ${{ inputs.target_environment }}
-              run: uv run python sample/e2e/deploy_federated_demo.py
+              run: uv run python -u .deploy/deploy_federated_demo.py
 
             - name: Upload fabric-cicd error log
               if: always()
