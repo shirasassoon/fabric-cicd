@@ -5,7 +5,7 @@ from pathlib import Path
 
 from azure.identity import WorkloadIdentityCredential
 
-from fabric_cicd import change_log_level, FabricWorkspace, publish_all_items
+from fabric_cicd import FabricWorkspace, change_log_level, publish_all_items
 
 
 def require_env(name: str) -> str:
@@ -27,9 +27,6 @@ def main() -> None:
     tenant_id = require_env("AZURE_TENANT_ID")
     federated_token_file = require_env("AZURE_FEDERATED_TOKEN_FILE")
 
-    print(f"AZURE_CLIENT_ID: {client_id}")
-    print(f"AZURE_TENANT_ID: {tenant_id}")
-    print(f"AZURE_FEDERATED_TOKEN_FILE exists: {os.path.exists(federated_token_file)}")
     print(f"Repository directory: {repository_directory}")
     print(f"Target environment: {target_environment}")
 
