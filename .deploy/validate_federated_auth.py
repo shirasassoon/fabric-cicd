@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 from azure.identity import WorkloadIdentityCredential
 
@@ -20,7 +21,7 @@ def main() -> None:
 
     print(f"AZURE_CLIENT_ID: {client_id}")
     print(f"AZURE_TENANT_ID: {tenant_id}")
-    print(f"AZURE_FEDERATED_TOKEN_FILE exists: {os.path.exists(federated_token_file)}")
+    print(f"AZURE_FEDERATED_TOKEN_FILE exists: {Path(federated_token_file).exists()}")
 
     credential = WorkloadIdentityCredential(
         tenant_id=tenant_id,

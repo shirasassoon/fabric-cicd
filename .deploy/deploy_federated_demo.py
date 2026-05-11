@@ -5,7 +5,7 @@ from pathlib import Path
 
 from azure.identity import WorkloadIdentityCredential
 
-from fabric_cicd import change_log_level, FabricWorkspace, publish_all_items
+from fabric_cicd import FabricWorkspace, change_log_level, publish_all_items
 
 
 def require_env(name: str) -> str:
