@@ -42,7 +42,7 @@ def main() -> None:
         workspace_id=workspace_id,
         repository_directory=repository_directory,
         environment=target_environment,
-        item_type_in_scope=["Environment", "Notebook", "DataPipeline"],
+        item_type_in_scope=["Environment", "Notebook", "DataPipeline", "Lakehouse"],
         token_credential=credential,
     )
 
