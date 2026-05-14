@@ -199,7 +199,7 @@ jobs:
                           owner,
                           repo,
                           issue_number: issueNumber,
-                          body: '🔔 @microsoft/fabric-cicd-dev — This issue has been flagged by AI triage as requiring team attention. Please review the assessment above.'
+                          body: '🔔 @microsoft/fabric-cicd — This issue has been flagged by AI triage as requiring team attention. Please review the assessment above.'
                         });
                         core.info('Escalated to team.');
                       }
@@ -253,7 +253,7 @@ jobs:
                         summary += `| Would add \`help wanted\` | ${ld.addHelpWanted ? '✅ Yes' : '❌ No'} |\n`;
                         summary += `| Would add \`ai:needs team attention\` | ${ld.needsHumanReview ? '✅ Yes' : '❌ No'} |\n`;
                         summary += `| Would request author feedback | ${ld.needsAuthorFeedback ? '✅ Yes' : '❌ No'} |\n`;
-                        summary += `| Would remove \`needs triage\` | ${!ld.needsHumanReview ? '✅ Yes' : '❌ No'} |\n`;
+                        summary += `| Would remove \`needs triage\` | ✅ Yes (always) |\n`;
                         summary += `| Would auto-close | ${ld.canAutoClose && !ld.needsAuthorFeedback && !ld.addHelpWanted ? '✅ Yes' : '❌ No'} |\n`;
                         summary += `| Would notify team | ${ld.needsHumanReview ? '✅ Yes' : '❌ No'} |\n\n`;
                       }
