@@ -41,8 +41,36 @@ This approach uses the Azure CLI Credential Flow. An explicit credential method 
 
 === "GitHub"
 
+    This example uses [workload identity federation (OIDC)](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation) for authentication. You must configure a federated identity credential on your Azure AD app registration that trusts GitHub's OIDC token issuer. See [Azure login with OIDC](https://github.com/azure/login#login-with-openid-connect-oidc-recommended) for setup instructions.
+
     ```yaml
-    # Unconfirmed example at this time. The Azure DevOps example is a good starting point.
+    name: Deploy Fabric Workspace
+
+    on:
+      push:
+        branches:
+          - dev
+          - main
+
+    permissions:
+      id-token: write
+      contents: read
+
+    jobs:
+      deploy:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with:
+              python-version: '3.12'
+          - run: pip install fabric-cicd
+          - uses: azure/login@v2
+            with:
+              client-id: ${{ secrets.AZURE_CLIENT_ID }}
+              tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+              subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          - run: python .deploy/fabric_workspace.py
     ```
 
 ## Azure PowerShell
@@ -85,8 +113,37 @@ This approach uses the Azure PowerShell Credential Flow. An explicit credential 
 
 === "GitHub"
 
+    This example uses [workload identity federation (OIDC)](https://learn.microsoft.com/en-us/entra/workload-id/workload-identity-federation) with `enable-AzPSSession: true` to set up an Azure PowerShell context. You must configure a federated identity credential on your Azure AD app registration. See [Azure login with OIDC](https://github.com/azure/login#login-with-openid-connect-oidc-recommended) for setup instructions.
+
     ```yaml
-    # Unconfirmed example at this time. The Azure DevOps example is a good starting point.
+    name: Deploy Fabric Workspace
+
+    on:
+      push:
+        branches:
+          - dev
+          - main
+
+    permissions:
+      id-token: write
+      contents: read
+
+    jobs:
+      deploy:
+        runs-on: ubuntu-latest
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with:
+              python-version: '3.12'
+          - run: pip install fabric-cicd
+          - uses: azure/login@v2
+            with:
+              client-id: ${{ secrets.AZURE_CLIENT_ID }}
+              tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+              subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+              enable-AzPSSession: true
+          - run: python .deploy/fabric_workspace.py
     ```
 
 ## Variable Groups
@@ -142,6 +199,34 @@ This approach is best suited for the Passed Arguments example found in the Deplo
 
 === "GitHub"
 
+    This example requires [GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment) named `dev` and `main` to be configured in your repository settings, with the appropriate secrets and variables defined in each environment.
+
     ```yaml
-    # Unconfirmed example at this time. The Azure DevOps example is a good starting point.
+    name: Deploy Fabric Workspace
+
+    on:
+      push:
+        branches:
+          - dev
+          - main
+
+    jobs:
+      deploy:
+        runs-on: ubuntu-latest
+        environment: ${{ github.ref_name }}  # Requires GitHub Environments named "dev" and "main"
+        steps:
+          - uses: actions/checkout@v4
+          - uses: actions/setup-python@v5
+            with:
+              python-version: '3.12'
+          - run: pip install fabric-cicd
+          - run: |
+              python .deploy/fabric_workspace.py \
+                --spn_client_id ${{ secrets.SPN_CLIENT_ID }} \
+                --spn_client_secret ${{ secrets.SPN_CLIENT_SECRET }} \
+                --tenant_id ${{ secrets.TENANT_ID }} \
+                --workspace_id ${{ vars.WORKSPACE_ID }} \
+                --environment ${{ vars.ENVIRONMENT_NAME }} \
+                --repository_directory ${{ vars.REPOSITORY_DIRECTORY }} \
+                --item_types_in_scope "${{ vars.ITEMS_IN_SCOPE }}"
     ```
