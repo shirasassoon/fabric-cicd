@@ -191,6 +191,52 @@ class TestParameterUtilities:
         expected = {"pattern": "id=([\\w-]+)", "is_regex": True, "has_matches": True, "ignore_case": False}
         assert result == expected
 
+    def test_extract_find_value_dynamic_workspace_id(self, mock_workspace):
+        """Tests extract_find_value resolves $workspace.$id when workspace_obj is provided."""
+        param_dict = {"find_value": "$workspace.$id"}
+        expected = {"pattern": "mock-workspace-id", "is_regex": False, "has_matches": True, "ignore_case": False}
+        assert (
+            extract_find_value(param_dict, "content with mock-workspace-id", True, workspace_obj=mock_workspace)
+            == expected
+        )
+
+    def test_extract_find_value_dynamic_named_workspace_id(self, mock_workspace):
+        """Tests extract_find_value resolves $workspace.<name>.$id when workspace_obj is provided."""
+        mock_workspace._resolve_workspace_id.return_value = "dev-workspace-id"
+        param_dict = {"find_value": "$workspace.dev.$id"}
+        expected = {"pattern": "dev-workspace-id", "is_regex": False, "has_matches": True, "ignore_case": False}
+        assert (
+            extract_find_value(param_dict, "content with dev-workspace-id", True, workspace_obj=mock_workspace)
+            == expected
+        )
+        mock_workspace._resolve_workspace_id.assert_called_once_with("dev")
+
+    def test_extract_find_value_cross_workspace_item_resolves(self, mock_workspace):
+        """Tests extract_find_value resolves cross-workspace item attributes."""
+        mock_workspace._resolve_workspace_id.return_value = "workspace-dev-id"
+        mock_workspace._lookup_item_attribute.return_value = "cross-item-id"
+        find_value = "$workspace.dev.$items.Lakehouse.Example.$id"
+        param_dict = {"find_value": find_value}
+
+        result = extract_find_value(param_dict, "content with cross-item-id", True, workspace_obj=mock_workspace)
+
+        assert result == {"pattern": "cross-item-id", "is_regex": False, "has_matches": True, "ignore_case": False}
+
+    def test_extract_find_value_rejects_items_variable(self, mock_workspace):
+        """Tests extract_find_value raises InputError when $items.* is used in find_value."""
+        find_value = "$items.Lakehouse.Example.$id"
+        param_dict = {"find_value": find_value}
+
+        with pytest.raises(InputError, match=re.escape(find_value)):
+            extract_find_value(param_dict, "some content", True, workspace_obj=mock_workspace)
+
+    def test_extract_find_value_dynamic_variable_resolves_empty(self, mock_workspace):
+        """Tests extract_find_value returns no-op when dynamic variable resolves to empty string."""
+        mock_workspace._resolve_workspace_id.return_value = ""
+        param_dict = {"find_value": "$workspace.nonexistent"}
+        expected = {"pattern": "", "is_regex": False, "has_matches": False, "ignore_case": False}
+        assert extract_find_value(param_dict, "any content", True, workspace_obj=mock_workspace) == expected
+
     def test_extract_find_value_ignore_case_literal(self):
         """Tests extract_find_value with ignore_case: 'true' for literal find_value."""
         param_dict = {"find_value": "Test-Value", "ignore_case": "true"}
