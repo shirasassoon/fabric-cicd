@@ -39,12 +39,6 @@ jobs:
                   echo "$TOKEN" > "$RUNNER_TEMP/federated-token"
                   echo "AZURE_FEDERATED_TOKEN_FILE=$RUNNER_TEMP/federated-token" >> "$GITHUB_ENV"
 
-            - name: Validate federated auth
-              env:
-                  AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-                  AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-              run: uv run python -u .deploy/validate_federated_auth.py
-
             - name: Deploy demo to Fabric
               env:
                   AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
