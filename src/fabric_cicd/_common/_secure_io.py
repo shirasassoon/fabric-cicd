@@ -5,6 +5,7 @@
 
 import logging
 import os
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,10 @@ def restrict_file(path: str) -> None:
     """
     if not IS_POSIX:
         return
-    if not os.path.exists(path):
+    p = Path(path)
+    if not p.exists():
         return
     try:
-        os.chmod(path, OWNER_ONLY_FILE_MODE)
+        p.chmod(OWNER_ONLY_FILE_MODE)
     except OSError as e:
         logger.debug("Failed to set permissions %o on %s: %s", OWNER_ONLY_FILE_MODE, path, e)
