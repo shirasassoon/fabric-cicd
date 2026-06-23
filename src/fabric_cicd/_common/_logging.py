@@ -125,9 +125,19 @@ def _mark_external_handler(handler: logging.Handler) -> logging.Handler:
     return handler
 
 
+class _RestrictedFileHandler(logging.FileHandler):
+    """FileHandler that enforces owner-only permissions on the log file."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        super().emit(record)
+        from fabric_cicd._common._secure_io import restrict_file
+
+        restrict_file(self.baseFilename)
+
+
 def _configure_default_file_handler() -> logging.Handler:
     """Configure the default file handler for standalone fabric_cicd usage."""
-    handler = logging.FileHandler(
+    handler = _RestrictedFileHandler(
         filename=_DEFAULT_LOG_FILENAME,
         mode="w",
         delay=True,

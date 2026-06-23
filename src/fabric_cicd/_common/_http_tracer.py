@@ -245,6 +245,10 @@ class FileTracer:
         with output_path.open("w") as f:
             json.dump(output_data, f, indent=2)
 
+        from fabric_cicd._common._secure_io import restrict_file
+
+        restrict_file(self.output_file)
+
 
 class HTTPTracerFactory:
     """Factory class for creating HTTP tracer instances."""

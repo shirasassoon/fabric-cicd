@@ -20,6 +20,9 @@ class FileLock:
 
     def __enter__(self) -> "FileLock":
         self._lock_file = self.lock_path.open("w")
+        from fabric_cicd._common._secure_io import restrict_file
+
+        restrict_file(str(self.lock_path))
         if sys.platform == "win32":
             import msvcrt
 
