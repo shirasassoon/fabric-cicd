@@ -4,6 +4,7 @@
 """Logging utilities for the fabric_cicd package."""
 
 import inspect
+import io
 import logging
 import re
 import sys
@@ -126,13 +127,13 @@ def _mark_external_handler(handler: logging.Handler) -> logging.Handler:
 
 
 class _RestrictedFileHandler(logging.FileHandler):
-    """FileHandler that enforces owner-only permissions on the log file."""
+    """FileHandler that creates log files with owner-only permissions (0o600) on POSIX."""
 
-    def emit(self, record: logging.LogRecord) -> None:
-        super().emit(record)
-        from fabric_cicd._common._secure_io import restrict_file
+    def _open(self) -> io.TextIOWrapper:
+        from fabric_cicd._common._secure_io import IS_POSIX, restricted_opener
 
-        restrict_file(self.baseFilename)
+        opener = restricted_opener if IS_POSIX else None
+        return open(self.baseFilename, self.mode, encoding=self.encoding, opener=opener)  # noqa: SIM115
 
 
 def _configure_default_file_handler() -> logging.Handler:
