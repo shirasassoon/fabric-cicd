@@ -3,6 +3,7 @@
 
 """Tests for _secure_io module."""
 
+import json
 import stat
 import tempfile
 from pathlib import Path
@@ -10,13 +11,18 @@ from unittest.mock import patch
 
 import pytest
 
-from fabric_cicd._common._secure_io import IS_POSIX, OWNER_ONLY_FILE_MODE, restrict_file
+from fabric_cicd._common._secure_io import IS_POSIX, OWNER_ONLY_FILE_MODE, restrict_file, restricted_opener
 
 posix_only = pytest.mark.skipif(not IS_POSIX, reason="POSIX permission bits are a no-op on Windows")
 
 
 def _mode(path: str) -> int:
     return stat.S_IMODE(Path(path).stat().st_mode)
+
+
+# ---------------------------------------------------------------------------
+# restrict_file
+# ---------------------------------------------------------------------------
 
 
 @posix_only
@@ -67,3 +73,78 @@ def test_restrict_file_noop_on_windows():
         # (On actual Windows this whole test is moot, but we're testing the guard)
     finally:
         Path(path).unlink()
+
+
+# ---------------------------------------------------------------------------
+# restricted_opener
+# ---------------------------------------------------------------------------
+
+
+@posix_only
+def test_restricted_opener_creates_file_with_owner_only_perms():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = str(Path(tmpdir) / "new_file.json")
+        with open(path, "w", opener=restricted_opener) as f:
+            f.write("data")
+        assert _mode(path) == OWNER_ONLY_FILE_MODE
+
+
+@posix_only
+def test_restricted_opener_overwrites_existing_file():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        path = str(Path(tmpdir) / "existing.json")
+        Path(path).write_text("old")
+        Path(path).chmod(0o644)
+        with open(path, "w", opener=restricted_opener) as f:
+            f.write("new")
+        assert Path(path).read_text() == "new"
+        assert _mode(path) == OWNER_ONLY_FILE_MODE
+
+
+# ---------------------------------------------------------------------------
+# FileTracer.save() integration
+# ---------------------------------------------------------------------------
+
+
+@posix_only
+def test_file_tracer_save_creates_restricted_trace_file():
+    from fabric_cicd._common._http_tracer import FileTracer
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trace_path = str(Path(tmpdir) / "trace.json")
+        tracer = FileTracer(output_file=trace_path)
+        tracer.capture_request(
+            method="GET",
+            url="https://api.fabric.microsoft.com/v1/workspaces",
+            headers={"Content-Type": "application/json"},
+            body="",
+            files=None,
+        )
+        tracer.save()
+
+        assert Path(trace_path).exists()
+        assert _mode(trace_path) == OWNER_ONLY_FILE_MODE
+
+        data = json.loads(Path(trace_path).read_text())
+        assert data["total_traces"] == 1
+        assert data["traces"][0]["request"]["method"] == "GET"
+
+
+def test_file_tracer_save_writes_valid_json():
+    from fabric_cicd._common._http_tracer import FileTracer
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        trace_path = str(Path(tmpdir) / "trace.json")
+        tracer = FileTracer(output_file=trace_path)
+        tracer.capture_request(
+            method="POST",
+            url="https://api.fabric.microsoft.com/v1/items",
+            headers={"Content-Type": "application/json"},
+            body='{"displayName": "test"}',
+            files=None,
+        )
+        tracer.save()
+
+        data = json.loads(Path(trace_path).read_text())
+        assert data["total_traces"] == 1
+        assert data["traces"][0]["request"]["url"] == "https://api.fabric.microsoft.com/v1/items"
