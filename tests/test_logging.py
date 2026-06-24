@@ -22,7 +22,6 @@ from fabric_cicd import (
 from fabric_cicd._common._logging import (
     CustomFormatter,
     PackageFilter,
-    _RestrictedFileHandler,
     _build_console_message,
     _build_file_message,
     _cleanup_managed_handlers,
@@ -31,6 +30,7 @@ from fabric_cicd._common._logging import (
     _configure_external_file_handler,
     _mark_external_handler,
     _mark_handler,
+    _RestrictedFileHandler,
     configure_logger,
     exception_handler,
     get_file_handler,
