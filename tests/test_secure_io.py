@@ -65,12 +65,9 @@ def test_restrict_file_noop_on_windows():
     try:
         import fabric_cicd._common._secure_io as mod
 
-        with patch.object(mod, "IS_POSIX", False):
+        with patch.object(mod, "IS_POSIX", False), patch("pathlib.Path.chmod") as mock_chmod:
             mod.restrict_file(path)
-
-        # Verify the file still has its original permissions (chmod was not called)
-        # by checking it wasn't changed to 0o600
-        # (On actual Windows this whole test is moot, but we're testing the guard)
+            mock_chmod.assert_not_called()
     finally:
         Path(path).unlink()
 

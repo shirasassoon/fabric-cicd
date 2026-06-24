@@ -308,6 +308,27 @@ class TestConfigureDefaultFileHandler:
         finally:
             handler.close()
 
+    def test_restricted_handler_calls_restrict_file_on_open(self, temp_log_dir):
+        """Test that _RestrictedFileHandler._open() calls restrict_file before writing."""
+        log_file = temp_log_dir / "fabric_cicd.error.log"
+        handler = _RestrictedFileHandler(str(log_file), mode="w", delay=True)
+        try:
+            with patch("fabric_cicd._common._secure_io.restrict_file") as mock_restrict:
+                handler.emit(
+                    logging.LogRecord(
+                        name="fabric_cicd",
+                        level=logging.ERROR,
+                        pathname="",
+                        lineno=0,
+                        msg="test",
+                        args=(),
+                        exc_info=None,
+                    )
+                )
+                mock_restrict.assert_called_once_with(handler.baseFilename)
+        finally:
+            handler.close()
+
 
 class TestConfigureExternalFileHandler:
     """Tests for the _configure_external_file_handler function."""
