@@ -22,6 +22,7 @@ from fabric_cicd import (
 from fabric_cicd._common._logging import (
     CustomFormatter,
     PackageFilter,
+    _RestrictedFileHandler,
     _build_console_message,
     _build_file_message,
     _cleanup_managed_handlers,
@@ -293,6 +294,7 @@ class TestConfigureDefaultFileHandler:
         """Test default file handler has correct configuration."""
         handler = _configure_default_file_handler()
         try:
+            assert isinstance(handler, _RestrictedFileHandler)
             assert isinstance(handler, logging.FileHandler)
             assert not isinstance(handler, RotatingFileHandler)
             assert getattr(handler, "_fabric_cicd_managed", False) is True
