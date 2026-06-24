@@ -90,11 +90,14 @@ def test_restricted_opener_creates_file_with_owner_only_perms():
 
 
 @posix_only
-def test_restricted_opener_overwrites_existing_file():
+def test_restricted_opener_with_restrict_file_tightens_existing():
+    """Test the production pattern: restrict_file() + open(opener=restricted_opener)."""
     with tempfile.TemporaryDirectory() as tmpdir:
         path = str(Path(tmpdir) / "existing.json")
         Path(path).write_text("old")
         Path(path).chmod(0o644)
+        # Production pattern: tighten first, then write with restricted opener
+        restrict_file(path)
         with open(path, "w", opener=restricted_opener) as f:
             f.write("new")
         assert Path(path).read_text() == "new"
