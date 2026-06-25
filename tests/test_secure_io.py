@@ -4,6 +4,7 @@
 """Tests for _secure_io module."""
 
 import json
+import os
 import stat
 import tempfile
 from pathlib import Path
@@ -111,40 +112,50 @@ def test_file_tracer_save_creates_restricted_trace_file():
     from fabric_cicd._common._http_tracer import FileTracer
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        trace_path = str(Path(tmpdir) / "trace.json")
-        tracer = FileTracer(output_file=trace_path)
-        tracer.capture_request(
-            method="GET",
-            url="https://api.fabric.microsoft.com/v1/workspaces",
-            headers={"Content-Type": "application/json"},
-            body="",
-            files=None,
-        )
-        tracer.save()
+        original_cwd = Path.cwd()
+        os.chdir(tmpdir)
+        try:
+            trace_path = str(Path(tmpdir) / "trace.json")
+            tracer = FileTracer(output_file=trace_path)
+            tracer.capture_request(
+                method="GET",
+                url="https://api.fabric.microsoft.com/v1/workspaces",
+                headers={"Content-Type": "application/json"},
+                body="",
+                files=None,
+            )
+            tracer.save()
 
-        assert Path(trace_path).exists()
-        assert _mode(trace_path) == OWNER_ONLY_FILE_MODE
+            assert Path(trace_path).exists()
+            assert _mode(trace_path) == OWNER_ONLY_FILE_MODE
 
-        data = json.loads(Path(trace_path).read_text())
-        assert data["total_traces"] == 1
-        assert data["traces"][0]["request"]["method"] == "GET"
+            data = json.loads(Path(trace_path).read_text())
+            assert data["total_traces"] == 1
+            assert data["traces"][0]["request"]["method"] == "GET"
+        finally:
+            os.chdir(original_cwd)
 
 
 def test_file_tracer_save_writes_valid_json():
     from fabric_cicd._common._http_tracer import FileTracer
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        trace_path = str(Path(tmpdir) / "trace.json")
-        tracer = FileTracer(output_file=trace_path)
-        tracer.capture_request(
-            method="POST",
-            url="https://api.fabric.microsoft.com/v1/items",
-            headers={"Content-Type": "application/json"},
-            body='{"displayName": "test"}',
-            files=None,
-        )
-        tracer.save()
+        original_cwd = Path.cwd()
+        os.chdir(tmpdir)
+        try:
+            trace_path = str(Path(tmpdir) / "trace.json")
+            tracer = FileTracer(output_file=trace_path)
+            tracer.capture_request(
+                method="POST",
+                url="https://api.fabric.microsoft.com/v1/items",
+                headers={"Content-Type": "application/json"},
+                body='{"displayName": "test"}',
+                files=None,
+            )
+            tracer.save()
 
-        data = json.loads(Path(trace_path).read_text())
-        assert data["total_traces"] == 1
-        assert data["traces"][0]["request"]["url"] == "https://api.fabric.microsoft.com/v1/items"
+            data = json.loads(Path(trace_path).read_text())
+            assert data["total_traces"] == 1
+            assert data["traces"][0]["request"]["url"] == "https://api.fabric.microsoft.com/v1/items"
+        finally:
+            os.chdir(original_cwd)
