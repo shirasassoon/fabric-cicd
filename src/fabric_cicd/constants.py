@@ -96,11 +96,11 @@ SERIAL_ITEM_PUBLISH_ORDER: dict[int, ItemType] = {
     15: ItemType.DATA_BUILD_TOOL_JOB,
     16: ItemType.KQL_DATABASE,
     17: ItemType.KQL_QUERYSET,
-    18: ItemType.REFLEX,
-    19: ItemType.EVENTSTREAM,
-    20: ItemType.KQL_DASHBOARD,
-    21: ItemType.DATAFLOW,
-    22: ItemType.DATA_PIPELINE,
+    18: ItemType.DATAFLOW,
+    19: ItemType.DATA_PIPELINE,
+    20: ItemType.REFLEX,
+    21: ItemType.EVENTSTREAM,
+    22: ItemType.KQL_DASHBOARD,
     23: ItemType.GRAPHQL_API,
     24: ItemType.APACHE_AIRFLOW_JOB,
     25: ItemType.MOUNTED_DATA_FACTORY,
@@ -194,7 +194,17 @@ PARALLEL_MAX_WORKERS: int = (
 )
 
 # HTTP Headers
-AUTHORIZATION_HEADER = "authorization"
+# Headers filtered from HTTP trace output as a defense-in-depth measure
+SENSITIVE_REQUEST_HEADERS = frozenset({
+    "authorization",
+})
+# These may appear in auth failure, token refresh, or proxy-mediated responses
+SENSITIVE_RESPONSE_HEADERS = frozenset({
+    "set-cookie",
+    "www-authenticate",
+    "proxy-authenticate",
+    "x-ms-aad-diagnostic-headers",
+})
 
 # Publish
 SHELL_ONLY_PUBLISH = [
