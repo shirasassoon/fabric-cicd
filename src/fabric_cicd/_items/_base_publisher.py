@@ -306,17 +306,25 @@ class ItemPublisher(Publisher):
     @staticmethod
     def publish_all_bulk(fabric_workspace_obj: "FabricWorkspace") -> list["ItemPublisher"]:
         """
-        Execute a single bulk publish across all item types in scope.
+        Execute bulk publish across all item types in scope, with tiered execution
+        when dynamic variable dependencies require it.
 
         Lifecycle:
             1. pre_publish_all() — per type
             2. get_items_to_publish() — per type, collect into one pool
-            3. _publish_items() — single cross-type API call
-            4. post_publish_all() — per type
+            3. Build dependency graph from $items.* dynamic variables
+            4. Compute publish tiers (topological sort)
+            5. For each tier: _publish_items() → refresh deployed items
+            6. post_publish_all() — per type
 
         Returns:
             List of publishers that have async checks pending.
         """
+        from fabric_cicd._parameter._utils import (
+            build_dynamic_variable_dependency_graph,
+            compute_publish_tiers,
+        )
+
         publishers: list[ItemPublisher] = []
         items_with_context: list[tuple[str, Item, ItemPublisher]] = []
         skipped_items: list[str] = []
@@ -348,19 +356,51 @@ class ItemPublisher(Publisher):
             items_with_context.extend(publishable_items)
             publishers.append(publisher)
 
-        # Phase 2: Single bulk API call (publisher context used inside for per-item transforms)
+        # Phase 2: Tiered bulk API calls
         if items_with_context:
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
 
-            item_count = len(items_with_context)
-            if item_count > constants.BULK_ITEM_COUNT_LIMIT:
-                msg = (
-                    f"Bulk publish item count ({item_count}) exceeds the API limit "
-                    f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
+            # Build dependency graph from dynamic variables if parameter file has them
+            dependency_edges: list[tuple[str, str]] = []
+            if fabric_workspace_obj.contains_param_vars:
+                dependency_edges = build_dynamic_variable_dependency_graph(
+                    environment_parameter=fabric_workspace_obj.environment_parameter,
+                    environment=fabric_workspace_obj.environment,
+                    deployed_items=fabric_workspace_obj.deployed_items,
+                    repository_items=fabric_workspace_obj.repository_items,
                 )
-                raise InputError(msg, logger)
-            fabric_workspace_obj._publish_items(items_with_context, skipped_items=skipped_items)
+
+            # Compute tiers (single tier when no unresolved dependencies)
+            tiers = compute_publish_tiers(items_with_context, dependency_edges)
+
+            if len(tiers) > 1:
+                logger.info(f"Dynamic variable dependencies require {len(tiers)} bulk publish tiers")
+
+            for tier_index, tier_items in enumerate(tiers):
+                tier_count = len(tier_items)
+                if tier_count > constants.BULK_ITEM_COUNT_LIMIT:
+                    msg = (
+                        f"Bulk publish tier {tier_index} item count ({tier_count}) exceeds the API limit "
+                        f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
+                    )
+                    raise InputError(msg, logger)
+
+                if len(tiers) > 1:
+                    tier_names = sorted(f"{item.type}: {name}" for name, item, _ in tier_items)
+                    logger.info(f"Publishing tier {tier_index + 1}/{len(tiers)}: {tier_names}")
+
+                fabric_workspace_obj._publish_items(
+                    tier_items, skipped_items=skipped_items if tier_index == 0 else None
+                )
+
+                # Between tiers: refresh deployed items so next tier can resolve $items.* variables
+                if tier_index < len(tiers) - 1:
+                    # Clear $items.* entries from cache (deployed state changed)
+                    fabric_workspace_obj._dynamic_var_cache = {
+                        k: v for k, v in fabric_workspace_obj._dynamic_var_cache.items() if k.startswith("$workspace.")
+                    }
+                    fabric_workspace_obj._refresh_deployed_items()
 
         # Phase 3: Post-hooks per type
         for publisher in publishers:

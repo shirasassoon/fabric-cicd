@@ -247,17 +247,17 @@ class TestBulkPublishFallback:
         ],
         ids=["dynamic_replace_value", "dynamic_find_value"],
     )
-    def test_fallback_on_dynamic_variables(self, mock_endpoint, temp_workspace_dir, param_yaml):
-        """Bulk publish falls back when parameter file contains dynamic $workspace/$items variables."""
+    def test_no_fallback_on_dynamic_variables(self, mock_endpoint, temp_workspace_dir, param_yaml):
+        """Bulk publish stays enabled when parameter file contains dynamic $workspace/$items variables."""
         create_test_item_dir(temp_workspace_dir, None, "TestNotebook", "Notebook", "nb-id-001")
         create_parameter_file(temp_workspace_dir, param_yaml)
 
         with (
             patched_workspace(mock_endpoint, temp_workspace_dir, environment="PPE") as workspace,
-            patch("fabric_cicd._items._notebook.NotebookPublisher", return_value=MagicMock()),
+            patch.object(ItemPublisher, "publish_all_bulk", return_value=[]),
         ):
             publish.publish_all_items(workspace)
-            assert workspace.bulk_publish_enabled is False
+            assert workspace.bulk_publish_enabled is True
             assert workspace.contains_param_vars is True
 
     def test_no_fallback_without_dynamic_variables(self, mock_endpoint, temp_workspace_dir):
@@ -883,3 +883,226 @@ class TestBulkPublishResponseCollection:
                 result = publish.publish_all_items(workspace, item_name_exclude_regex="^FilteredNB$")
 
                 assert result is None
+
+
+# =============================================================================
+# Tiered Bulk Publish Tests
+# =============================================================================
+
+
+class TestTieredBulkPublish:
+    """Tests for tiered bulk publishing with dynamic variable dependencies."""
+
+    def test_single_tier_no_dynamic_vars(self):
+        """All items in one tier when no dynamic variables exist."""
+        from fabric_cicd._parameter._utils import compute_publish_tiers
+
+        items = [("ItemA", MagicMock(type="Notebook"), MagicMock())]
+        tiers = compute_publish_tiers(items, [])
+        assert len(tiers) == 1
+        assert len(tiers[0]) == 1
+
+    def test_single_tier_no_edges(self):
+        """Multiple items in one tier when no dependency edges exist."""
+        from fabric_cicd._parameter._utils import compute_publish_tiers
+
+        items = [
+            ("NB1", MagicMock(type="Notebook"), MagicMock()),
+            ("LH1", MagicMock(type="Lakehouse"), MagicMock()),
+            ("SM1", MagicMock(type="SemanticModel"), MagicMock()),
+        ]
+        tiers = compute_publish_tiers(items, [])
+        assert len(tiers) == 1
+        assert len(tiers[0]) == 3
+
+    def test_two_tiers_with_dependency(self):
+        """Items split into two tiers when dependency exists."""
+        from fabric_cicd._parameter._utils import compute_publish_tiers
+
+        items = [
+            ("NB1", MagicMock(type="Notebook"), MagicMock()),
+            ("LH1", MagicMock(type="Lakehouse"), MagicMock()),
+        ]
+        # Notebook depends on Lakehouse
+        edges = [("Notebook.NB1", "Lakehouse.LH1")]
+        tiers = compute_publish_tiers(items, edges)
+
+        assert len(tiers) == 2
+        # Tier 0 should have Lakehouse (no deps), Tier 1 should have Notebook
+        tier0_types = {item[1].type for item in tiers[0]}
+        tier1_types = {item[1].type for item in tiers[1]}
+        assert "Lakehouse" in tier0_types
+        assert "Notebook" in tier1_types
+
+    def test_three_tiers_chained_dependencies(self):
+        """Three-tier chain: Pipeline → Notebook → Lakehouse."""
+        from fabric_cicd._parameter._utils import compute_publish_tiers
+
+        items = [
+            ("DP1", MagicMock(type="DataPipeline"), MagicMock()),
+            ("NB1", MagicMock(type="Notebook"), MagicMock()),
+            ("LH1", MagicMock(type="Lakehouse"), MagicMock()),
+        ]
+        edges = [
+            ("DataPipeline.DP1", "Notebook.NB1"),
+            ("Notebook.NB1", "Lakehouse.LH1"),
+        ]
+        tiers = compute_publish_tiers(items, edges)
+
+        assert len(tiers) == 3
+
+    def test_circular_dependency_raises_error(self):
+        """Circular dependency raises InputError."""
+        from fabric_cicd._parameter._utils import compute_publish_tiers
+
+        items = [
+            ("NB1", MagicMock(type="Notebook"), MagicMock()),
+            ("LH1", MagicMock(type="Lakehouse"), MagicMock()),
+        ]
+        edges = [
+            ("Notebook.NB1", "Lakehouse.LH1"),
+            ("Lakehouse.LH1", "Notebook.NB1"),
+        ]
+        with pytest.raises(InputError, match="Circular dynamic variable dependency"):
+            compute_publish_tiers(items, edges)
+
+    def test_independent_items_unaffected_by_edges(self):
+        """Items not involved in any edge go to Tier 0."""
+        from fabric_cicd._parameter._utils import compute_publish_tiers
+
+        items = [
+            ("NB1", MagicMock(type="Notebook"), MagicMock()),
+            ("LH1", MagicMock(type="Lakehouse"), MagicMock()),
+            ("SM1", MagicMock(type="SemanticModel"), MagicMock()),
+        ]
+        # Only NB1 depends on LH1; SM1 is independent
+        edges = [("Notebook.NB1", "Lakehouse.LH1")]
+        tiers = compute_publish_tiers(items, edges)
+
+        assert len(tiers) == 2
+        # SM1 and LH1 should be in tier 0
+        tier0_names = {item[0] for item in tiers[0]}
+        assert "SM1" in tier0_names
+        assert "LH1" in tier0_names
+
+    def test_build_graph_no_dynamic_vars(self):
+        """Empty graph when parameter file has no dynamic variables."""
+        from fabric_cicd._parameter._utils import build_dynamic_variable_dependency_graph
+
+        params = {
+            "find_replace": [
+                {"find_value": "old-value", "replace_value": {"DEV": "new-value"}},
+            ]
+        }
+        edges = build_dynamic_variable_dependency_graph(params, "DEV", {}, {})
+        assert edges == []
+
+    def test_build_graph_deployed_item_no_edge(self):
+        """No edge when $items references an already-deployed item."""
+        from fabric_cicd._parameter._utils import build_dynamic_variable_dependency_graph
+
+        params = {
+            "find_replace": [
+                {
+                    "find_value": "placeholder-id",
+                    "replace_value": {"DEV": "$items.Lakehouse.my_lh.$id"},
+                    "item_type": "Notebook",
+                    "item_name": "my_nb",
+                },
+            ]
+        }
+        deployed = {"Lakehouse": {"my_lh": MagicMock()}}
+        repo = {"Notebook": {"my_nb": MagicMock()}, "Lakehouse": {"my_lh": MagicMock()}}
+        edges = build_dynamic_variable_dependency_graph(params, "DEV", deployed, repo)
+        assert edges == []
+
+    def test_build_graph_new_item_creates_edge(self):
+        """Edge created when $items references a new (not deployed) item in the batch."""
+        from fabric_cicd._parameter._utils import build_dynamic_variable_dependency_graph
+
+        params = {
+            "find_replace": [
+                {
+                    "find_value": "placeholder-id",
+                    "replace_value": {"DEV": "$items.Lakehouse.my_lh.$id"},
+                    "item_type": "Notebook",
+                    "item_name": "my_nb",
+                },
+            ]
+        }
+        deployed = {}
+        repo = {"Notebook": {"my_nb": MagicMock()}, "Lakehouse": {"my_lh": MagicMock()}}
+        edges = build_dynamic_variable_dependency_graph(params, "DEV", deployed, repo)
+        assert ("Notebook.my_nb", "Lakehouse.my_lh") in edges
+
+    def test_build_graph_unfiltered_param_applies_to_all(self):
+        """Unfiltered $items param creates edges for all items in repo."""
+        from fabric_cicd._parameter._utils import build_dynamic_variable_dependency_graph
+
+        params = {
+            "find_replace": [
+                {
+                    "find_value": "placeholder-id",
+                    "replace_value": {"DEV": "$items.Lakehouse.my_lh.$id"},
+                    # No item_type or item_name filter
+                },
+            ]
+        }
+        deployed = {}
+        repo = {
+            "Notebook": {"nb1": MagicMock()},
+            "Lakehouse": {"my_lh": MagicMock()},
+        }
+        edges = build_dynamic_variable_dependency_graph(params, "DEV", deployed, repo)
+        # nb1 depends on my_lh (Lakehouse.my_lh doesn't depend on itself)
+        assert ("Notebook.nb1", "Lakehouse.my_lh") in edges
+        assert ("Lakehouse.my_lh", "Lakehouse.my_lh") not in edges
+
+    def test_build_graph_workspace_var_no_edge(self):
+        """$workspace.* variables never create dependency edges."""
+        from fabric_cicd._parameter._utils import build_dynamic_variable_dependency_graph
+
+        params = {
+            "find_replace": [
+                {
+                    "find_value": "placeholder-id",
+                    "replace_value": {"DEV": "$workspace.other_ws.$id"},
+                },
+            ]
+        }
+        edges = build_dynamic_variable_dependency_graph(params, "DEV", {}, {})
+        assert edges == []
+
+    def test_build_graph_all_attributes_create_edges(self):
+        """All $items attributes ($id, $sqlendpoint, etc.) create edges for new items."""
+        from fabric_cicd._parameter._utils import build_dynamic_variable_dependency_graph
+
+        for attr in ("$id", "$sqlendpoint", "$sqlendpointid", "$queryserviceuri"):
+            params = {
+                "find_replace": [
+                    {
+                        "find_value": "placeholder",
+                        "replace_value": {"DEV": f"$items.Lakehouse.my_lh.{attr}"},
+                        "item_type": "Notebook",
+                        "item_name": "my_nb",
+                    },
+                ]
+            }
+            repo = {"Notebook": {"my_nb": MagicMock()}, "Lakehouse": {"my_lh": MagicMock()}}
+            edges = build_dynamic_variable_dependency_graph(params, "DEV", {}, repo)
+            assert len(edges) == 1, f"Expected edge for attribute {attr}"
+
+    def test_parse_items_variable_reference(self):
+        """Test parsing of various $items variable formats."""
+        from fabric_cicd._parameter._utils import _parse_items_variable_reference
+
+        # New format
+        assert _parse_items_variable_reference("$items.Lakehouse.my_lh.$id") == ("Lakehouse", "my_lh")
+        assert _parse_items_variable_reference("$items.Warehouse.my_wh.$sqlendpoint") == ("Warehouse", "my_wh")
+
+        # Legacy format
+        assert _parse_items_variable_reference("$items.Lakehouse.my_lh.id") == ("Lakehouse", "my_lh")
+
+        # Invalid formats
+        assert _parse_items_variable_reference("$items.Lakehouse") is None
+        assert _parse_items_variable_reference("$items") is None
