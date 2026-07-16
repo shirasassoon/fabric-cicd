@@ -306,23 +306,23 @@ class ItemPublisher(Publisher):
     @staticmethod
     def publish_all_bulk(fabric_workspace_obj: "FabricWorkspace") -> list["ItemPublisher"]:
         """
-        Execute bulk publish across all item types in scope, with tiered execution
+        Execute bulk publish across all item types in scope, with batched execution
         when dynamic variable dependencies require it.
 
         Lifecycle:
             1. pre_publish_all() — per type
             2. get_items_to_publish() — per type, collect into one pool
             3. Build dependency graph from $items.* dynamic variables
-            4. Compute publish tiers (topological sort)
-            5. For each tier: _publish_items() → refresh deployed items
+            4. Compute publish batches (topological sort)
+            5. For each batch: _publish_items() → refresh deployed items
             6. post_publish_all() — per type
 
         Returns:
             List of publishers that have async checks pending.
         """
-        from fabric_cicd._parameter._utils import (
+        from fabric_cicd._items._bulk_publish_dependencies import (
             build_dynamic_variable_dependency_graph,
-            compute_publish_tiers,
+            compute_publish_batches,
         )
 
         publishers: list[ItemPublisher] = []
@@ -356,7 +356,7 @@ class ItemPublisher(Publisher):
             items_with_context.extend(publishable_items)
             publishers.append(publisher)
 
-        # Phase 2: Tiered bulk API calls
+        # Phase 2: Batched bulk API calls
         if items_with_context:
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
@@ -364,38 +364,31 @@ class ItemPublisher(Publisher):
             # Build dependency graph from dynamic variables if parameter file has them
             dependency_edges: list[tuple[str, str]] = []
             if fabric_workspace_obj.contains_param_vars:
-                dependency_edges = build_dynamic_variable_dependency_graph(
-                    environment_parameter=fabric_workspace_obj.environment_parameter,
-                    environment=fabric_workspace_obj.environment,
-                    deployed_items=fabric_workspace_obj.deployed_items,
-                    repository_items=fabric_workspace_obj.repository_items,
-                )
+                publish_item_keys = {f"{item.type}.{item_name}" for item_name, item, _publisher in items_with_context}
+                dependency_edges = build_dynamic_variable_dependency_graph(fabric_workspace_obj, publish_item_keys)
 
-            # Compute tiers (single tier when no unresolved dependencies)
-            tiers = compute_publish_tiers(items_with_context, dependency_edges)
+            # Compute batches (single batch when no unresolved dependencies)
+            batches = compute_publish_batches(items_with_context, dependency_edges)
 
-            if len(tiers) > 1:
-                logger.info(f"Dynamic variable dependencies require {len(tiers)} bulk publish tiers")
-
-            for tier_index, tier_items in enumerate(tiers):
-                tier_count = len(tier_items)
-                if tier_count > constants.BULK_ITEM_COUNT_LIMIT:
+            for batch_index, batch_items in enumerate(batches):
+                batch_count = len(batch_items)
+                if batch_count > constants.BULK_ITEM_COUNT_LIMIT:
                     msg = (
-                        f"Bulk publish tier {tier_index} item count ({tier_count}) exceeds the API limit "
+                        f"Bulk publish batch {batch_index} item count ({batch_count}) exceeds the API limit "
                         f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
                     )
                     raise InputError(msg, logger)
 
-                if len(tiers) > 1:
-                    tier_names = sorted(f"{item.type}: {name}" for name, item, _ in tier_items)
-                    logger.info(f"Publishing tier {tier_index + 1}/{len(tiers)}: {tier_names}")
+                if len(batches) > 1:
+                    batch_names = sorted(f"{item.type}: {name}" for name, item, _ in batch_items)
+                    logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}: {batch_names}")
 
                 fabric_workspace_obj._publish_items(
-                    tier_items, skipped_items=skipped_items if tier_index == 0 else None
+                    batch_items, skipped_items=skipped_items if batch_index == 0 else None
                 )
 
-                # Between tiers: refresh deployed items so next tier can resolve $items.* variables
-                if tier_index < len(tiers) - 1:
+                # Between batches: refresh deployed items so the next batch can resolve $items.* variables
+                if batch_index < len(batches) - 1:
                     # Clear $items.* entries from cache (deployed state changed)
                     fabric_workspace_obj._dynamic_var_cache = {
                         k: v for k, v in fabric_workspace_obj._dynamic_var_cache.items() if k.startswith("$workspace.")

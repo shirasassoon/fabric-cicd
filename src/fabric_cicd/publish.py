@@ -218,14 +218,23 @@ def publish_all_items(
             msg = "The 'enable_bulk_publish' feature flag requires 'enable_experimental_features' to be enabled."
             raise InputError(msg, logger)
 
+        # Fall back to standard deployment if unsupported item types are detected
         unsupported = set(fabric_workspace_obj.item_type_in_scope) - set(constants.BULK_ACCEPTED_ITEM_TYPES)
-        # Fall back to standard deployment only if unsupported item types are detected
-        # Dynamic variables ($workspace/$items) are now handled natively via tiered bulk publishing
         if unsupported:
-            reason = f"unsupported item types: {', '.join(sorted(unsupported))}"
-            logger.warning(f"Falling back to standard deployment. Reason: {reason}.")
+            logger.warning(
+                f"Falling back to standard deployment. Reason: unsupported item types: {', '.join(sorted(unsupported))}."
+            )
         else:
-            fabric_workspace_obj.bulk_publish_enabled = True
+            from fabric_cicd._items._bulk_publish_dependencies import has_unfiltered_items_variable
+
+            if has_unfiltered_items_variable(fabric_workspace_obj):
+                logger.warning(
+                    "Falling back to standard deployment. Reason: parameter file contains $items.* "
+                    "replace_value entries without item_type, item_name, or file_path filters. "
+                    "Add at least one filter to each such entry to enable bulk publish."
+                )
+            else:
+                fabric_workspace_obj.bulk_publish_enabled = True
 
     # Apply selective deployment features
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:
