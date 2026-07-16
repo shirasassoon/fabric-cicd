@@ -164,17 +164,32 @@ def extract_replace_value(workspace_obj: FabricWorkspace, replace_value: str, ge
             return None
         return replace_value
 
+    # Check the dynamic variable cache first (only active during bulk publish)
+    if (
+        not get_dataflow_name
+        and workspace_obj.bulk_publish_enabled
+        and replace_value in workspace_obj._dynamic_var_cache
+    ):
+        logger.debug(f"Cache hit for dynamic variable: {replace_value}")
+        return workspace_obj._dynamic_var_cache[replace_value]
+
     # If $workspace variable, return the workspace ID value
     if replace_value.startswith("$workspace."):
         if get_dataflow_name:
             msg = "Invalid replace_value variable: '$workspace'. Expected format to get dataflow name: $items.type.name.$attribute"
             raise InputError(msg, logger)
 
-        return _extract_workspace_id(workspace_obj, replace_value)
+        resolved = _extract_workspace_id(workspace_obj, replace_value)
+        if workspace_obj.bulk_publish_enabled:
+            workspace_obj._dynamic_var_cache[replace_value] = resolved
+        return resolved
 
     # If $items variable, return the item attribute value if found
     if replace_value.startswith("$items."):
-        return _extract_item_attribute(workspace_obj, replace_value, get_dataflow_name)
+        resolved = _extract_item_attribute(workspace_obj, replace_value, get_dataflow_name)
+        if workspace_obj.bulk_publish_enabled and not get_dataflow_name and resolved is not None:
+            workspace_obj._dynamic_var_cache[replace_value] = resolved
+        return resolved
 
     # Otherwise, raise an error for invalid variable syntax
     msg = f"Invalid replace_value variable format: '{replace_value}'. Expected format: $items.type.name.$attribute or $workspace.$id or $workspace.$name or $workspace.$name_encoded or $workspace.<name>.$id or $workspace.<name>.$items.<type>.<name>.$attribute"

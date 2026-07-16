@@ -192,7 +192,7 @@ def publish_all_items(
         ...     publish_all_items(workspace, items_to_include=changed)
     """
     fabric_workspace_obj = validate_fabric_workspace_obj(fabric_workspace_obj)
-    
+
     # Initialize response collection if feature flag is enabled
     responses_enabled = FeatureFlag.ENABLE_RESPONSE_COLLECTION.value in constants.FEATURE_FLAG
     if responses_enabled:
@@ -217,22 +217,24 @@ def publish_all_items(
         if FeatureFlag.ENABLE_EXPERIMENTAL_FEATURES.value not in constants.FEATURE_FLAG:
             msg = "The 'enable_bulk_publish' feature flag requires 'enable_experimental_features' to be enabled."
             raise InputError(msg, logger)
-        
-        reasons = []
+
+        # Fall back to standard deployment if unsupported item types are detected
         unsupported = set(fabric_workspace_obj.item_type_in_scope) - set(constants.BULK_ACCEPTED_ITEM_TYPES)
-        # Fall back to standard deployment if unsupported item types or dynamic parameter variables are detected, otherwise enable bulk publish
-        if unsupported or fabric_workspace_obj.contains_param_vars:
-            if unsupported:
-                reasons.append(f"unsupported item types: {', '.join(sorted(unsupported))}")
-                
-            if fabric_workspace_obj.contains_param_vars:
-                reasons.append(
-                    "parameter file contains dynamic variables ($workspace/$items) requiring runtime resolution"
-                )
-            logger.warning(f"Falling back to standard deployment. Reason: {'; '.join(reasons)}.")
-       
+        if unsupported:
+            logger.warning(
+                f"Falling back to standard deployment. Reason: unsupported item types: {', '.join(sorted(unsupported))}."
+            )
         else:
-            fabric_workspace_obj.bulk_publish_enabled = True
+            from fabric_cicd._items._bulk_publish_dependencies import has_unfiltered_items_variable
+
+            if has_unfiltered_items_variable(fabric_workspace_obj):
+                logger.warning(
+                    "Falling back to standard deployment. Reason: parameter file contains $items.* "
+                    "replace_value entries without item_type, item_name, or file_path filters. "
+                    "Add at least one filter to each such entry to enable bulk publish."
+                )
+            else:
+                fabric_workspace_obj.bulk_publish_enabled = True
 
     # Apply selective deployment features
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:

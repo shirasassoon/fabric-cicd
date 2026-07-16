@@ -144,6 +144,9 @@ class FabricWorkspace:
         self.contains_param_vars = False
         self.bulk_publish_enabled = False
 
+        # Cache for pre-resolved dynamic variable values (used during bulk publish)
+        self._dynamic_var_cache: dict[str, str] = {}
+
         # Initialize dataflow dependencies dictionary (used in dataflow item processing)
         self.dataflow_dependencies = {}
 
