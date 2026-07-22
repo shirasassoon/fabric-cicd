@@ -220,13 +220,9 @@ def publish_all_items(
 
         reasons = []
         unsupported = set(fabric_workspace_obj.item_type_in_scope) - set(constants.BULK_ACCEPTED_ITEM_TYPES)
-        # Fall back to standard deployment if unsupported item types or dynamic parameter variables are detected, otherwise enable bulk publish
-        if unsupported or fabric_workspace_obj.contains_items_vars:
-            if unsupported:
-                reasons.append(f"unsupported item types: {', '.join(sorted(unsupported))}")
-
-            if fabric_workspace_obj.contains_items_vars:
-                reasons.append("parameter file contains $items variables requiring runtime resolution")
+        # Fall back to standard deployment if unsupported item types are detected, otherwise enable bulk publish
+        if unsupported:
+            reasons.append(f"unsupported item types: {', '.join(sorted(unsupported))}")
             logger.warning(f"Falling back to standard deployment. Reason: {'; '.join(reasons)}.")
 
         else:

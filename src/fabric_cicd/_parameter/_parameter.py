@@ -424,6 +424,44 @@ class Parameter:
 
         return False
 
+    def _get_items_dependency_graph(self) -> dict[str, set[str]]:
+        """
+        Parses the parameter file to build a type-level dependency graph from $items variables.
+
+        Scans find_replace and key_value_replace entries where replace_value contains
+        a $items.* variable and item_type is set on the entry (required when using $items
+        so the consumer type is known). Returns a mapping of consumer item type to the
+        set of item types it depends on.
+
+        Returns:
+            {consumer_item_type: set(dependency_item_types)}
+        """
+        graph: dict[str, set[str]] = {}
+        items_pattern = re.compile(constants.ITEMS_VARIABLE_REGEX, re.IGNORECASE)
+        dynamic_param_names = {"find_replace", "key_value_replace"}
+
+        for param_name, param_values in self.environment_parameter.items():
+            if param_name not in dynamic_param_names:
+                continue
+            if not isinstance(param_values, list):
+                continue
+            for param_dict in param_values:
+                consumer_type = param_dict.get("item_type")
+                if not consumer_type:
+                    continue
+                replace_value = param_dict.get("replace_value")
+                if not isinstance(replace_value, dict):
+                    continue
+                for env_value in replace_value.values():
+                    if not isinstance(env_value, str) or not items_pattern.match(env_value):
+                        continue
+                    # Extract dependency type: $items.<DepType>.<Name>.<attr>
+                    dep_type = env_value.removeprefix("$items.").split(".")[0]
+                    if dep_type:
+                        graph.setdefault(consumer_type, set()).add(dep_type)
+
+        return graph
+
     def _validate_parameter_structure(self) -> tuple[bool, str]:
         """Validate the parameter file structure."""
         if not is_valid_structure(self.environment_parameter):

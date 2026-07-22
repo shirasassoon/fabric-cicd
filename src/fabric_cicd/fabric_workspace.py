@@ -142,6 +142,7 @@ class FabricWorkspace:
         self.deployed_folders = {}
         self.deployed_items = {}
         self.contains_items_vars = False
+        self.items_dependency_graph: dict[str, set[str]] = {}
         self.bulk_publish_enabled = False
 
         # Initialize dataflow dependencies dictionary (used in dataflow item processing)
@@ -315,6 +316,7 @@ class FabricWorkspace:
         if is_valid:
             self.environment_parameter = parameter_obj.environment_parameter
             self.contains_items_vars = parameter_obj._search_dynamic_replacement_variables_in_parameter_file()
+            self.items_dependency_graph = parameter_obj._get_items_dependency_graph()
         else:
             msg = "Deployment terminated due to an invalid parameter file"
             raise ParameterFileError(msg, logger)
