@@ -403,8 +403,12 @@ class Parameter:
             logger.warning(constants.PARAMETER_MSGS["gateway_deprecated"])
 
     def _search_dynamic_replacement_variables_in_parameter_file(self) -> bool:
-        """Search for dynamic replacement variables in the parameter file."""
-        dynamic_var_pattern = re.compile(constants.DYNAMIC_VARIABLES_REGEX, re.IGNORECASE)
+        """Search for $items dynamic replacement variables in the parameter file.
+
+        Returns True if any replace_value across find_replace or key_value_replace
+        parameters starts with the $items. prefix.
+        """
+        items_pattern = re.compile(constants.ITEMS_VARIABLE_REGEX, re.IGNORECASE)
         dynamic_param_names = {"find_replace", "key_value_replace"}
 
         for param_name, param_values in self.environment_parameter.items():
@@ -412,16 +416,10 @@ class Parameter:
                 continue
             if isinstance(param_values, list):
                 for param_dict in param_values:
-                    # Check find_value for dynamic variables
-                    find_value = param_dict.get("find_value", "")
-                    if isinstance(find_value, str) and dynamic_var_pattern.search(find_value):
-                        return True
-
-                    # Check replace_value for dynamic variables
                     replace_value = param_dict.get("replace_value")
                     if isinstance(replace_value, dict):
                         for env_value in replace_value.values():
-                            if isinstance(env_value, str) and dynamic_var_pattern.search(env_value):
+                            if isinstance(env_value, str) and items_pattern.match(env_value):
                                 return True
 
         return False
