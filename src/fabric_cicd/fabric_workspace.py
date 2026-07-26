@@ -223,9 +223,29 @@ class FabricWorkspace:
         raise InputError(msg, logger)
 
     def _get_item_attribute(
-        self, workspace_id: str, item_type: str, item_guid: str, item_name: str, attribute_name: str
+        self,
+        workspace_id: str,
+        item_type: str,
+        item_guid: str,
+        item_name: str,
+        attribute_name: str,
+        required: bool = True,
     ) -> str:
-        """Returns the attribute value of an item in the specified workspace based on item type and id"""
+        """Returns the attribute value of an item in the specified workspace based on item type and id.
+
+        Args:
+            workspace_id: The workspace ID containing the item.
+            item_type: The type of the item.
+            item_guid: The GUID of the item.
+            item_name: The display name of the item.
+            attribute_name: The attribute to resolve (e.g. 'sqlendpoint').
+            required: When True, raise InputError if the attribute cannot be resolved.
+                When False (e.g. during the deployed-items refresh, which enriches every deployed
+                item regardless of whether the user referenced it), log a warning and return an empty
+                string instead of raising. This avoids failing the run for newly provisioned items
+                (such as the staging lakehouse created for a Dataflow Gen2) whose SQL endpoint is not
+                yet available due to eventual consistency.
+        """
         # No need to make API calls if we don't have an item guid
         if not item_guid:
             return ""
@@ -262,8 +282,16 @@ class FabricWorkspace:
         )
         # Extract the attribute value using the path
         attribute_value = dpath.get(response, property_path, default="")
+
         if not attribute_value:
             msg = f"Attribute value not found for {item_type} '{item_name}'"
+            # required=False during the deployed-items refresh, which enriches every deployed item
+            # (including incidental ones such as the staging lakehouse auto-created for a Dataflow Gen2).
+            # Such items may not have their SQL endpoint populated yet, and nobody references them, so
+            # skip them with a warning instead of failing the whole run.
+            if not required:
+                logger.warning(f"{msg}; skipping (item may be newly provisioned).")
+                return ""
             raise InputError(msg, logger)
 
         # Cache the result before returning
@@ -459,14 +487,14 @@ class FabricWorkspace:
                     ItemType.SQL_DATABASE.value,
                 ]:
                     sql_endpoint = self._get_item_attribute(
-                        self.workspace_id, item_type, item_guid, item_name, "sqlendpoint"
+                        self.workspace_id, item_type, item_guid, item_name, "sqlendpoint", required=False
                     )
                     sql_endpoint_id = self._get_item_attribute(
-                        self.workspace_id, item_type, item_guid, item_name, "sqlendpointid"
+                        self.workspace_id, item_type, item_guid, item_name, "sqlendpointid", required=False
                     )
                 if item_type in [ItemType.EVENTHOUSE.value]:
                     query_service_uri = self._get_item_attribute(
-                        self.workspace_id, item_type, item_guid, item_name, "queryserviceuri"
+                        self.workspace_id, item_type, item_guid, item_name, "queryserviceuri", required=False
                     )
 
             # Add item details to the deployed_items dictionary
