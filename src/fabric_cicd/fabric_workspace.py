@@ -464,7 +464,7 @@ class FabricWorkspace:
 
             # Only collect attribute values when parameterization with dynamic variables is in use
             if self.contains_items_vars:
-                # Get additional properties
+                # Get additional properties - eagerly fetch attribute values for specific item types
                 if item_type in [
                     ItemType.LAKEHOUSE.value,
                     ItemType.MIRRORED_DATABASE.value,
