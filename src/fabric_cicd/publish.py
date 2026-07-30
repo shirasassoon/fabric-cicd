@@ -428,12 +428,13 @@ def unpublish_all_orphan_items(
     )
 
 
-def deploy_with_config(
+def deploy_with_config(  # noqa: D417
     config_file_path: str,
     *,
     token_credential: TokenCredential,
     environment: str = "N/A",
     config_override: Optional[dict] = None,
+    **kwargs,
 ) -> DeploymentResult:
     """
     Deploy items using YAML configuration file with environment-specific settings.
@@ -529,6 +530,8 @@ def deploy_with_config(
         ...     print(e.deployment_result.message)   # Original error message
         ...     print(e.deployment_result.responses) # Partial API responses or None
     """
+    host_app = kwargs.get("host_app")
+
     log_header(logger, "Config-Based Deployment")
     logger.info(f"Loading configuration from {config_file_path} for environment '{environment}'")
 
@@ -568,6 +571,7 @@ def deploy_with_config(
                 token_credential=token_credential,
                 parameter_file_path=workspace_settings.get("parameter_file_path"),
                 skip_parameterization=skip_parameterization,
+                host_app=host_app,
             )
             # Execute deployment operations based on skip settings
             if not publish_settings.get("skip", False):
