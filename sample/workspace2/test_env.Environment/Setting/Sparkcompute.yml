@@ -1,0 +1,24 @@
+enable_native_execution_engine: false
+instance_pool_id: f967b14a-28aa-4785-9702-e2a4d532b3fc
+live_pool:
+  state: Enabled
+  max_cluster_to_hydrate_per_activation: 1
+  schedule_state: Enabled
+  schedule:
+    recurrence_type: Daily
+    start_date: 2026-08-03T00:00:00.0000000
+    start_time: 17:09:00
+    end_date: 2026-08-04T00:00:00.0000000
+    end_time: 05:09:00
+    time_zone: GTB Standard Time
+  deactivate_on_idle_in_minutes: 20
+  reactivate_interval_in_minutes: 30
+driver_cores: 8
+driver_memory: 56g
+executor_cores: 8
+executor_memory: 56g
+dynamic_executor_allocation:
+  enabled: true
+  min_executors: 1
+  max_executors: 9
+runtime_version: 1.3
