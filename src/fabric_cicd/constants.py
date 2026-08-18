@@ -66,6 +66,8 @@ class ItemType(str, Enum):
     MOUNTED_DATA_FACTORY = "MountedDataFactory"
     NOTEBOOK = "Notebook"
     ONTOLOGY = "Ontology"
+    ORG_APP = "OrgApp"
+    ORG_APP_AUDIENCE = "OrgAppAudience"
     PAGINATED_REPORT = "PaginatedReport"
     REFLEX = "Reflex"
     REPORT = "Report"
@@ -109,6 +111,8 @@ SERIAL_ITEM_PUBLISH_ORDER: dict[int, ItemType] = {
     27: ItemType.DATA_AGENT,
     28: ItemType.ML_EXPERIMENT,
     29: ItemType.MAP,
+    30: ItemType.ORG_APP,
+    31: ItemType.ORG_APP_AUDIENCE,
 }
 
 
@@ -233,6 +237,7 @@ EXCLUDE_PATH_REGEX_MAPPING = {
     ItemType.REPORT.value: r".*\.pbi[/\\].*",
     ItemType.SEMANTIC_MODEL.value: r".*\.pbi[/\\].*",
     ItemType.EVENTHOUSE.value: r".*\.children[/\\].*",
+    ItemType.ORG_APP.value: r".*\.children[/\\].*",
 }
 
 # API Format Mapping for item types that require specific API formats
@@ -248,6 +253,15 @@ DATAFLOW_SOURCE_REGEX = (
 )
 INVALID_FOLDER_CHAR_REGEX = r'[~"#.%&*:<>?/\\{|}]'
 KQL_DATABASE_FOLDER_PATH_REGEX = r"(?i)^(.*)/[^/]+\.Eventhouse/\.children(?:/.*)?$"
+ORG_APP_AUDIENCE_FOLDER_PATH_REGEX = r"(?i)^(.*)/[^/]+\.OrgApp/\.children(?:/.*)?$"
+# Maps a child item type to the regex used to extract its parent folder path.
+# Child items live under a "{Parent}.{ParentType}/.children/" container, so the
+# parent folder path must be extracted from before the parent container rather
+# than using the immediate parent directory.
+CHILD_ITEM_FOLDER_PATH_REGEX = {
+    ItemType.KQL_DATABASE.value: KQL_DATABASE_FOLDER_PATH_REGEX,
+    ItemType.ORG_APP_AUDIENCE.value: ORG_APP_AUDIENCE_FOLDER_PATH_REGEX,
+}
 DYNAMIC_VARIABLES_REGEX = r"^\$(workspace|items)\."
 
 # Well known file names

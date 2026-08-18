@@ -146,6 +146,20 @@
     - Referenced items that exist in a different workspace will always point to the original item unless parameterized in the `find_replace` section of the `parameter.yml` file.
     - Referenced items within the same workspace are automatically re-pointed to the new item in the target workspace.
 
+## Org App
+
+- **Parameterization:**
+    - Referenced items (e.g., Reports, Semantic Models) that exist in a different workspace will always point to the original item unless parameterized in the `find_replace` section of the `parameter.yml` file.
+    - Referenced items within the same workspace are automatically re-pointed to the new item in the target workspace.
+- The `exclude_path` variable is required when deploying an **Org App** that has attached **Org App Audiences** (common scenario). This is handled automatically.
+- An Org App packages existing Fabric content, so the referenced items must be deployed before the Org App.
+
+## Org App Audience
+
+- **Parameterization:**
+    - The `find_replace` section in the `parameter.yml` file is not applied.
+- In Fabric, an Org App Audience is not a standalone item. However, during deployment, it is treated as such. Its source control files are located within a `.children` folder under the directory of the parent Org App.
+
 ## Paginated Report
 
 - **Parameterization:**

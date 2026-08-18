@@ -245,6 +245,99 @@ def test_publish_paginated_report_item(mock_endpoint, temp_workspace_dir):
         mock_paginated_report_instance.publish_all.assert_called_once()
 
 
+def test_publish_org_app_item(mock_endpoint, temp_workspace_dir):
+    """Test that publish_all_items publishes OrgApp items when present in repository."""
+    create_test_item(temp_workspace_dir, None, "TestOrgApp", "OrgApp", "test-org-app-id")
+
+    with (
+        patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+        patch.object(FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})),
+        patch.object(
+            FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+        ),
+        patch("fabric_cicd._items._orgapp.OrgAppPublisher") as mock_org_app_cls,
+    ):
+        mock_org_app_instance = mock_org_app_cls.return_value
+
+        workspace = FabricWorkspace(
+            workspace_id="12345678-1234-5678-abcd-1234567890ab",
+            repository_directory=str(temp_workspace_dir),
+            token_credential=DummyTokenCredential(),
+        )
+
+        publish.publish_all_items(workspace)
+
+        assert "OrgApp" in workspace.repository_items
+        mock_org_app_cls.assert_called_once_with(workspace)
+        mock_org_app_instance.publish_all.assert_called_once()
+
+
+def test_publish_org_app_audience_item(mock_endpoint, temp_workspace_dir):
+    """Test that publish_all_items publishes OrgAppAudience child items under an OrgApp .children folder."""
+    create_test_item(temp_workspace_dir, None, "TestOrgApp", "OrgApp", "test-org-app-id")
+    audience_folder = str(Path("TestOrgApp.OrgApp") / ".children")
+    create_test_item(temp_workspace_dir, audience_folder, "TestAudience", "OrgAppAudience", "test-audience-id")
+
+    with (
+        patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+        patch.object(FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})),
+        patch.object(
+            FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+        ),
+        patch("fabric_cicd._items._orgappaudience.OrgAppAudiencePublisher") as mock_audience_cls,
+    ):
+        mock_audience_instance = mock_audience_cls.return_value
+
+        workspace = FabricWorkspace(
+            workspace_id="12345678-1234-5678-abcd-1234567890ab",
+            repository_directory=str(temp_workspace_dir),
+            item_type_in_scope=["OrgAppAudience"],
+            token_credential=DummyTokenCredential(),
+        )
+
+        publish.publish_all_items(workspace)
+
+        assert "OrgAppAudience" in workspace.repository_items
+        # The child's folder path is the parent folder before the .OrgApp/.children container (root here).
+        assert workspace.repository_items["OrgAppAudience"]["TestAudience"].folder_path == ""
+        mock_audience_cls.assert_called_once_with(workspace)
+        mock_audience_instance.publish_all.assert_called_once()
+
+
+def test_org_app_published_before_org_app_audience(mock_endpoint, temp_workspace_dir):
+    """Test that OrgApp items are published before their OrgAppAudience children."""
+    call_order = []
+
+    create_test_item(temp_workspace_dir, None, "TestOrgApp", "OrgApp", "test-org-app-id")
+    audience_folder = str(Path("TestOrgApp.OrgApp") / ".children")
+    create_test_item(temp_workspace_dir, audience_folder, "TestAudience", "OrgAppAudience", "test-audience-id")
+
+    with (
+        patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
+        patch.object(FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})),
+        patch.object(
+            FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
+        ),
+        patch("fabric_cicd._items._orgapp.OrgAppPublisher") as mock_org_app_cls,
+        patch("fabric_cicd._items._orgappaudience.OrgAppAudiencePublisher") as mock_audience_cls,
+    ):
+        mock_org_app_cls.return_value.publish_all.side_effect = lambda: call_order.append("OrgApp")
+        mock_audience_cls.return_value.publish_all.side_effect = lambda: call_order.append("OrgAppAudience")
+
+        workspace = FabricWorkspace(
+            workspace_id="12345678-1234-5678-abcd-1234567890ab",
+            repository_directory=str(temp_workspace_dir),
+            item_type_in_scope=["OrgApp", "OrgAppAudience"],
+            token_credential=DummyTokenCredential(),
+        )
+
+        publish.publish_all_items(workspace)
+
+        assert call_order == ["OrgApp", "OrgAppAudience"], (
+            f"OrgApp should be published before OrgAppAudience, but got order: {call_order}"
+        )
+
+
 def test_default_none_item_type_in_scope_includes_all_types(mock_endpoint, temp_workspace_dir):
     """Test that when item_type_in_scope is None (default), all available item types are included."""
     with (
