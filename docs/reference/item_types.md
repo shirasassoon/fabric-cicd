@@ -149,10 +149,8 @@
 ## Org App
 
 - **Parameterization:**
-    - Referenced items (e.g., Reports, Semantic Models) that exist in a different workspace will always point to the original item unless parameterized in the `find_replace` section of the `parameter.yml` file.
-    - Referenced items within the same workspace are automatically re-pointed to the new item in the target workspace.
-- The `exclude_path` variable is required when deploying an **Org App** that has attached **Org App Audiences** (common scenario). This is handled automatically.
-- An Org App packages existing Fabric content, so the referenced items must be deployed before the Org App.
+    - The `find_replace` section in the `parameter.yml` file is not applied.
+- **Only the Org App shell is created.** The Org App definition references packaged content by element IDs that are not remapped to the target workspace, which results in a blank Org App after deployment. To avoid deploying broken content, only the item shell (metadata) is published. The Org App content (audiences and included items) must be configured manually in the target workspace after deployment.
 
 ## Org App Audience
 
