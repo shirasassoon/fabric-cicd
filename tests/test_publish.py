@@ -272,41 +272,6 @@ def test_publish_org_app_item(mock_endpoint, temp_workspace_dir):
         mock_org_app_instance.publish_all.assert_called_once()
 
 
-def test_publish_org_app_is_shell_only(mock_endpoint, temp_workspace_dir):
-    """Test that OrgApp is published as a shell only (metadata, no definition)."""
-    assert "OrgApp" in constants.SHELL_ONLY_PUBLISH
-    create_test_item(temp_workspace_dir, None, "TestOrgApp", "OrgApp", "test-org-app-id")
-
-    with (
-        patch("fabric_cicd.fabric_workspace.FabricEndpoint", return_value=mock_endpoint),
-        patch.object(FabricWorkspace, "_refresh_deployed_items", new=lambda self: setattr(self, "deployed_items", {})),
-        patch.object(
-            FabricWorkspace, "_refresh_deployed_folders", new=lambda self: setattr(self, "deployed_folders", {})
-        ),
-    ):
-        workspace = FabricWorkspace(
-            workspace_id="12345678-1234-5678-abcd-1234567890ab",
-            repository_directory=str(temp_workspace_dir),
-            item_type_in_scope=["OrgApp"],
-            token_credential=DummyTokenCredential(),
-        )
-
-        publish.publish_all_items(workspace)
-
-    # Find the create-item POST for the OrgApp and assert it carries no definition.
-    create_bodies = [
-        kwargs.get("body")
-        for _args, kwargs in mock_endpoint.invoke.call_args_list
-        if kwargs.get("method") == "POST"
-        and str(kwargs.get("url", "")).endswith("/items")
-        and (kwargs.get("body") or {}).get("type") == "OrgApp"
-    ]
-    assert len(create_bodies) == 1, "Expected exactly one OrgApp create call"
-    body = create_bodies[0]
-    assert "definition" not in body, "OrgApp shell-only publish must not send a definition"
-    assert body["displayName"] == "TestOrgApp"
-
-
 def test_publish_org_app_audience_item(mock_endpoint, temp_workspace_dir):
     """Test that publish_all_items publishes OrgAppAudience child items under an OrgApp .children folder."""
     create_test_item(temp_workspace_dir, None, "TestOrgApp", "OrgApp", "test-org-app-id")

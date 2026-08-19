@@ -223,7 +223,6 @@ SHELL_ONLY_PUBLISH = [
     ItemType.WAREHOUSE.value,
     ItemType.SQL_DATABASE.value,
     ItemType.ML_EXPERIMENT.value,
-    ItemType.ORG_APP.value,
 ]
 
 # Item count limit for bulk publish API (as per current API documentation)
@@ -238,6 +237,7 @@ EXCLUDE_PATH_REGEX_MAPPING = {
     ItemType.REPORT.value: r".*\.pbi[/\\].*",
     ItemType.SEMANTIC_MODEL.value: r".*\.pbi[/\\].*",
     ItemType.EVENTHOUSE.value: r".*\.children[/\\].*",
+    ItemType.ORG_APP.value: r".*\.children[/\\].*",
 }
 
 # API Format Mapping for item types that require specific API formats
