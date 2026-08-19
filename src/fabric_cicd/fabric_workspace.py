@@ -389,12 +389,12 @@ class FabricWorkspace:
 
                 item_path = directory
                 relative_path = f"/{directory.relative_to(self.repository_directory).as_posix()}"
-                # Special handling for KQLDatabase items:
-                # .Eventhouse/.children/ directory structure, requires extracting the
-                # parent folder path before the Eventhouse container, not just
-                # the immediate parent directory
-                if item_type == ItemType.KQL_DATABASE.value:
-                    pattern = re.compile(constants.KQL_DATABASE_FOLDER_PATH_REGEX)
+                # Special handling for child items (e.g., KQLDatabase, OrgAppAudience):
+                # these live under a "{Parent}.{ParentType}/.children/" directory structure,
+                # so extract the parent folder path from before the parent container rather
+                # than using the immediate parent directory.
+                if item_type in constants.CHILD_ITEM_FOLDER_PATH_REGEX:
+                    pattern = re.compile(constants.CHILD_ITEM_FOLDER_PATH_REGEX[item_type])
                     match = pattern.match(relative_path)
                     relative_parent_path = match.group(1) if match else None
                 else:

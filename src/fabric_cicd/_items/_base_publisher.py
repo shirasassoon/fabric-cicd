@@ -160,6 +160,8 @@ class ItemPublisher(Publisher):
         from fabric_cicd._items._mounteddatafactory import MountedDataFactoryPublisher
         from fabric_cicd._items._notebook import NotebookPublisher
         from fabric_cicd._items._ontology import OntologyPublisher
+        from fabric_cicd._items._orgapp import OrgAppPublisher
+        from fabric_cicd._items._orgappaudience import OrgAppAudiencePublisher
         from fabric_cicd._items._paginatedreport import PaginatedReportPublisher
         from fabric_cicd._items._report import ReportPublisher
         from fabric_cicd._items._semanticmodel import SemanticModelPublisher
@@ -199,6 +201,8 @@ class ItemPublisher(Publisher):
             ItemType.ML_EXPERIMENT: MLExperimentPublisher,
             ItemType.ONTOLOGY: OntologyPublisher,
             ItemType.MAP: MapPublisher,
+            ItemType.ORG_APP: OrgAppPublisher,
+            ItemType.ORG_APP_AUDIENCE: OrgAppAudiencePublisher,
         }
 
         publisher_class = publisher_mapping.get(item_type)

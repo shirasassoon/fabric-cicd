@@ -1323,6 +1323,36 @@ def test_kqldatabase_folder_regex_no_match_edge_case():
         assert pattern.match(p) is None, f"Regex should not match path: {p}"
 
 
+def test_orgappaudience_folder_regex_root_org_app():
+    """OrgAppAudience under top-level OrgApp .children: group(1) is empty string."""
+    pattern = re.compile(constants.ORG_APP_AUDIENCE_FOLDER_PATH_REGEX)
+    relative_path = "/SampleApp.OrgApp/.children/SalesAudience.OrgAppAudience"
+    match = pattern.match(relative_path)
+    assert match is not None, "Regex should match a top-level OrgApp .children path"
+    assert match.group(1) == "", "Expected empty string for group(1) when OrgApp is at repository root"
+
+
+def test_orgappaudience_folder_regex_nested_subfolder():
+    """OrgAppAudience nested under a subfolder before OrgApp: group(1) captures the subfolder path."""
+    pattern = re.compile(constants.ORG_APP_AUDIENCE_FOLDER_PATH_REGEX)
+    relative_path = "/subfolder/SampleApp.OrgApp/.children/SalesAudience.OrgAppAudience"
+    match = pattern.match(relative_path)
+    assert match is not None, "Regex should match nested OrgApp .children path"
+    assert match.group(1) == "/subfolder", "Expected '/subfolder' captured as the parent path"
+
+
+def test_orgappaudience_folder_regex_no_match_edge_case():
+    """Edge case: paths that do not follow the OrgApp/.children pattern should not match."""
+    pattern = re.compile(constants.ORG_APP_AUDIENCE_FOLDER_PATH_REGEX)
+    bad_paths = [
+        "/SomeFolder/SalesAudience.OrgAppAudience",  # no OrgApp container
+        "/Another.OrgApp/SalesAudience.OrgAppAudience",  # missing '.children'
+        "/prefix/.children/SalesAudience.OrgAppAudience",  # missing OrgApp segment
+    ]
+    for p in bad_paths:
+        assert pattern.match(p) is None, f"Regex should not match path: {p}"
+
+
 def test_get_item_attribute_caching_basic(patched_fabric_workspace, valid_workspace_id, temp_workspace_dir):
     """Test that _get_item_attribute caches results and returns expected values."""
     mock_endpoint = MagicMock()
