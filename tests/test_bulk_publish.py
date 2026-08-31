@@ -921,7 +921,7 @@ class TestBulkPublishResponseCollection:
 
 
 # =============================================================================
-# Dynamic Variable Reference Parsing (parser alignment with #1102)
+# Dynamic Variable Reference Parsing (parser alignment)
 # =============================================================================
 
 
@@ -933,7 +933,7 @@ class TestDynamicVariableReferenceParsing:
         ("value", "expected"),
         [
             ("$items.Notebook.my_nb.$id", ("Notebook", "my_nb")),
-            # Dotted item name — the regression the #19 private parser got wrong
+            # Dotted item name — a case a naive split-on-dot parser gets wrong
             ("$items.Notebook.my.nb.$id", ("Notebook", "my.nb")),
             # Legacy attribute form (no leading $ on attribute)
             ("$items.Notebook.my_nb.id", ("Notebook", "my_nb")),

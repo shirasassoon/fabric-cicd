@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
-from fabric_cicd._common._exceptions import InputError, ParsingError
+from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._parameter._utils import (
     ParsedDynamicVariable,
     parse_dynamic_variable,
@@ -39,10 +39,7 @@ def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVari
     if not isinstance(env_value, str) or not env_value.startswith("$"):
         return None
 
-    try:
-        parsed = parse_dynamic_variable(env_value)
-    except ParsingError:
-        return None
+    parsed = parse_dynamic_variable(env_value)
 
     if parsed.kind == "item" and parsed.workspace_name is None:
         return parsed
@@ -60,9 +57,9 @@ def _resolve_current_workspace_item_ref(env_value: str) -> Optional[tuple[str, s
       - cross-workspace item variables ($workspace.<name>.$items.*), whose target lives
         in another workspace and therefore never creates an in-batch dependency here.
 
-    Parsing is delegated to the canonical parser from #1102. By the time bulk publish
-    runs, `_validate_dynamic_replacement_variables` has already validated every variable,
-    so `parse_dynamic_variable` is not expected to raise here; the guard is purely defensive.
+    Parsing is delegated to the canonical dynamic-variable parser. Every variable is
+    validated when the parameter file is loaded (at workspace initialization), so by the
+    time bulk publish runs `parse_dynamic_variable` resolves without raising here.
     """
     parsed = _parse_current_workspace_item(env_value)
     if parsed is None:
