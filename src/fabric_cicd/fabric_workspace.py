@@ -298,9 +298,9 @@ class FabricWorkspace:
         between tiers so a downstream tier does not resolve a dynamic variable to an empty value.
 
         Args:
-            item_type: The item type (e.g. ``Lakehouse``).
-            item_guid: The deployed item GUID. A falsy value is a no-op.
-            item_name: The item display name (for logging).
+            item_type: The item type.
+            item_guid: The deployed item ID.
+            item_name: The item display name.
             attribute_name: The asynchronously provisioned attribute to wait for.
         """
         if not item_guid:
