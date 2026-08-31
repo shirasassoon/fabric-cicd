@@ -153,15 +153,25 @@ To enable bulk publish, set both `enable_experimental_features` and `enable_bulk
 
 With bulk publishing, there is no predefined order of item types. The API leverages a dependency graph under the hood to determine the correct publishing sequence. As long as logical IDs are used to reference Fabric items, the API handles the rest — simplifying dependency management overhead. This may also reduce the complexity of your parameter file, though parameterization remains a key feature for edge cases and environment-specific customizations.
 
-Since this feature is experimental, it is recommended for non-production environments only. We encourage you to use this period to **provide feedback and help shape the bulk publish experience.** The initial release does not support all fabric-cicd item types and lacks support for more advanced parameterization features, specifically dynamic replacement variables (`$workspace`, `$items`).
+Since this feature is experimental, it is recommended for non-production environments only. We encourage you to use this period to **provide feedback and help shape the bulk publish experience.** The initial release does not support all fabric-cicd item types.
 
 !!! tip "Items using item IDs instead of logical IDs"
 
     Item definitions in the same workspace that reference other items by item ID (rather than logical ID) can still be published via bulk publish. However, parameterization is required to ensure references are correctly re-pointed in the target workspace. The recommended approach is to use a `find_replace` parameter where the `find_value` is the referenced item's ID and the `replace_value` is its logical ID. For example, a Dataflow Gen2 item that references a Lakehouse by item ID — use `find_replace` to swap the Lakehouse's item ID with its logical ID so the bulk publish API can resolve the dependency.
 
-    Note that logical ID replacement may not be a valid solution for all item types. In such cases, you can either use standard publish where dynamic replacement variables are supported, or use a multi-phased bulk publish deployment by applying [selective deployment](#selective-deployment-features) to separate the affected items across phases.
+    Note that logical ID replacement may not be a valid solution for all item types. In such cases, you can either use standard publish, or use a multi-phased bulk publish deployment by applying [selective deployment](#selective-deployment-features) to separate the affected items across phases.
 
     For more details on logical IDs, see [Resolve Logical ID Conflicts in Microsoft Fabric](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/logical-id-conflict-resolution).
+
+### Dynamic Replacement Variables
+
+Dynamic replacement variables (`$workspace` and `$items`) are supported in bulk publish. Because these variables are resolved at runtime, bulk publish orders items into dependency **tiers**: when an `$items.*` variable references another item in the same workspace, the referenced item is published in an earlier tier so its resolved value is available to its dependents. Each tier is published in its own bulk call, and deployed items are refreshed between tiers so later tiers resolve against real item IDs.
+
+Asynchronously provisioned attributes are handled automatically. When a downstream item references a SQL endpoint (`$sqlendpoint`, `$sqlendpointid`) or an Eventhouse query URI (`$queryserviceuri`), bulk publish waits for the source item's endpoint to finish provisioning before publishing the next tier, so the variable never resolves to an empty value.
+
+!!! warning "Unfiltered current-workspace `$items.*` replace values"
+
+    A current-workspace `$items.*` **`replace_value`** with no `item_type`, `item_name`, or `file_path` filter causes bulk publish to fall back to standard publish. Without a filter the dependency scope cannot be narrowed, so every item would be treated as a dependent of the referenced item. Add at least one filter to each such parameter entry to keep the deployment on the bulk path. Cross-workspace item variables (`$workspace.<name>.$items.*`), `$workspace.*` variables, and dynamic `find_value`s do not trigger this fallback.
 
 ### Authentication Requirements
 
@@ -173,7 +183,7 @@ Bulk publish will automatically fall back to standard publish mode when any of t
 
 - **Unsupported item types in scope**: `DataBuildToolJob` and `Warehouse` are not supported. If either is included in `item_type_in_scope`, the entire deployment uses standard publish.
 - **No `item_type_in_scope` specified**: Bulk publish requires an explicit `item_type_in_scope`. When omitted, all supported item types are included — which inevitably contains bulk unsupported types — so standard publish is used instead.
-- **Dynamic parameter variables**: Parameter files containing `$workspace` or `$items` replacement variables require runtime resolution, which is incompatible with bulk publish.
+- **Unfiltered current-workspace `$items.*` replace values**: A current-workspace `$items.*` `replace_value` with no `item_type`, `item_name`, or `file_path` filter forces fallback, since its dependency scope cannot be narrowed. Add a filter to each such entry to stay on the bulk path. All other dynamic replacement variables — `$workspace.*`, cross-workspace `$items.*`, and dynamic `find_value`s — are fully supported in bulk mode (see [Dynamic Replacement Variables](#dynamic-replacement-variables)).
 
 Check your deployment logs for the message `"Falling back to standard deployment..."` to confirm whether bulk publish was actually used.
 
