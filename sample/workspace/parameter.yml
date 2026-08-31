@@ -44,7 +44,7 @@ find_replace:
         PROD: "$items.Eventhouse.SampleEventhouse.queryserviceuri" 
       # Optional fields:
       file_path: "/Example Notebook.Notebook/notebook-content.py"
-    # Report byConnection - workspace id in connection string
+    # Report byConnection - workspace name in connection string
     - find_value: "dev-workspace-name"
       replace_value:
         PPE: "$workspace.$name"
