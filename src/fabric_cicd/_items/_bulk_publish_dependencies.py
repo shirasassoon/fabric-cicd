@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, Optional
 
 from fabric_cicd._common._exceptions import InputError, ParsingError
 from fabric_cicd._parameter._utils import (
+    ParsedDynamicVariable,
     parse_dynamic_variable,
     process_environment_key,
     process_input_path,
@@ -27,6 +28,34 @@ if TYPE_CHECKING:
     from fabric_cicd.fabric_workspace import FabricWorkspace
 
 logger = logging.getLogger(__name__)
+
+# Item attributes that are provisioned asynchronously after item creation and therefore
+# require a provisioning wait between bulk-publish tiers before a downstream item can resolve
+# them (mirrors constants.PROPERTY_PATH_ATTR_MAPPING; everything except the immediately
+# available "id").
+ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointid", "queryserviceuri"})
+
+
+def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVariable"]:
+    """
+    Returns the parsed variable when env_value is a *current-workspace* $items.* variable.
+
+    Returns None for non-variable strings, $workspace.* variables, and cross-workspace item
+    variables ($workspace.<name>.$items.*), whose targets live in another workspace and never
+    create an in-batch dependency here.
+    """
+    if not isinstance(env_value, str) or not env_value.startswith("$"):
+        return None
+
+    try:
+        parsed = parse_dynamic_variable(env_value)
+    except ParsingError:
+        return None
+
+    if parsed.kind == "item" and parsed.workspace_name is None:
+        return parsed
+
+    return None
 
 
 def _resolve_current_workspace_item_ref(env_value: str) -> Optional[tuple[str, str]]:
@@ -43,20 +72,10 @@ def _resolve_current_workspace_item_ref(env_value: str) -> Optional[tuple[str, s
     runs, `_validate_dynamic_replacement_variables` has already validated every variable,
     so `parse_dynamic_variable` is not expected to raise here; the guard is purely defensive.
     """
-    if not isinstance(env_value, str) or not env_value.startswith("$"):
+    parsed = _parse_current_workspace_item(env_value)
+    if parsed is None:
         return None
-
-    try:
-        parsed = parse_dynamic_variable(env_value)
-    except ParsingError:
-        return None
-
-    # Only same-workspace item references (kind == "item", no workspace_name) create
-    # an intra-batch dependency that tiered publishing must order.
-    if parsed.kind == "item" and parsed.workspace_name is None:
-        return parsed.item_type, parsed.item_name
-
-    return None
+    return parsed.item_type, parsed.item_name
 
 
 def _iter_dynamic_replace_values(workspace_obj: "FabricWorkspace") -> Iterator[tuple[dict, str]]:
@@ -91,6 +110,35 @@ def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
             return True
 
     return False
+
+
+def get_async_provisioned_dependencies(
+    workspace_obj: "FabricWorkspace", publish_item_keys: set[str]
+) -> dict[str, set[str]]:
+    """
+    Maps each to-be-published source item to the asynchronously provisioned attributes referenced on it.
+
+    Scans find_replace / key_value_replace entries for current-workspace $items.* variables whose
+    attribute is asynchronously provisioned (SQL endpoint / Eventhouse query URI). Only source items
+    that are part of the current publish set are included, since already-deployed items are already
+    provisioned and impose no tiering.
+
+    Returns:
+        A dict of "ItemType.ItemName" -> set of async attribute names (e.g. {"sqlendpoint"}). Empty
+        when no such references exist, in which case no between-tier provisioning wait is needed.
+    """
+    result: dict[str, set[str]] = {}
+
+    for _param_dict, env_value in _iter_dynamic_replace_values(workspace_obj):
+        parsed = _parse_current_workspace_item(env_value)
+        if parsed is None or parsed.attribute not in ASYNC_PROVISIONED_ATTRIBUTES:
+            continue
+
+        key = f"{parsed.item_type}.{parsed.item_name}"
+        if key in publish_item_keys:
+            result.setdefault(key, set()).add(parsed.attribute)
+
+    return result
 
 
 def build_dynamic_variable_dependency_graph(

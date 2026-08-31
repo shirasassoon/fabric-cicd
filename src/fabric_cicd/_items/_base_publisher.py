@@ -323,6 +323,7 @@ class ItemPublisher(Publisher):
         from fabric_cicd._items._bulk_publish_dependencies import (
             build_dynamic_variable_dependency_graph,
             compute_publish_batches,
+            get_async_provisioned_dependencies,
         )
 
         publishers: list[ItemPublisher] = []
@@ -364,9 +365,11 @@ class ItemPublisher(Publisher):
             # Build a dependency graph from dynamic replacement variables when the parameter file has them.
             # An empty graph (the common case) yields a single batch, identical to a single bulk call.
             dependency_edges: list[tuple[str, str]] = []
+            async_source_map: dict[str, set[str]] = {}
             if fabric_workspace_obj.contains_param_vars:
                 publish_item_keys = {f"{item.type}.{item_name}" for item_name, item, _publisher in items_with_context}
                 dependency_edges = build_dynamic_variable_dependency_graph(fabric_workspace_obj, publish_item_keys)
+                async_source_map = get_async_provisioned_dependencies(fabric_workspace_obj, publish_item_keys)
 
             batches = compute_publish_batches(items_with_context, dependency_edges)
 
@@ -391,6 +394,18 @@ class ItemPublisher(Publisher):
                 # to real GUIDs. Drop resolved $items.* cache entries (deployed state changed) while keeping
                 # $workspace.* entries, which reference other workspaces that do not change here.
                 if batch_index < len(batches) - 1:
+                    # Wait for asynchronously provisioned attributes (SQL endpoint / Eventhouse query URI)
+                    # of just-deployed source items referenced by a later tier, so the refresh below captures
+                    # real values instead of empty strings.
+                    for b_item_name, b_item, _b_publisher in batch_items:
+                        referenced_attrs = async_source_map.get(f"{b_item.type}.{b_item_name}")
+                        if not referenced_attrs:
+                            continue
+                        for attribute_name in sorted(referenced_attrs):
+                            fabric_workspace_obj._wait_for_item_attribute_provisioning(
+                                b_item.type, b_item.guid, b_item_name, attribute_name
+                            )
+
                     fabric_workspace_obj._dynamic_var_cache = {
                         k: v for k, v in fabric_workspace_obj._dynamic_var_cache.items() if k.startswith("$workspace.")
                     }

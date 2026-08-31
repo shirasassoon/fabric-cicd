@@ -16,12 +16,13 @@ from fixtures.credentials import DummyTokenCredential
 
 import fabric_cicd.publish as publish
 from fabric_cicd import constants
-from fabric_cicd._common._exceptions import InputError
+from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError
 from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd._items._bulk_publish_dependencies import (
     _resolve_current_workspace_item_ref,
     build_dynamic_variable_dependency_graph,
     compute_publish_batches,
+    get_async_provisioned_dependencies,
     has_unfiltered_items_variable,
 )
 from fabric_cicd.constants import FeatureFlag, ItemType
@@ -1142,3 +1143,158 @@ class TestBulkPublishTieredExecution:
         assert ws._refresh_deployed_items.call_count == 0
         # Cache untouched for a single batch
         assert ws._dynamic_var_cache == {"$workspace.$id": "wsid", "$items.Notebook.base.$id": "stale"}
+
+    def test_waits_for_async_attribute_before_refresh(self):
+        """A source item referenced downstream via an async attribute is waited on between tiers."""
+        base = SimpleNamespace(type="Lakehouse", guid="lh-guid")
+        dep = SimpleNamespace(type="Notebook", guid="nb-guid")
+
+        publisher = MagicMock()
+        publisher.get_items_to_publish.return_value = {"base": base, "dep": dep}
+        publisher.has_async_publish_check = False
+
+        ws = MagicMock()
+        ws.contains_param_vars = True
+        ws._apply_publish_filters.return_value = False
+        ws._dynamic_var_cache = {}
+
+        two_batches = [[("base", base, publisher)], [("dep", dep, publisher)]]
+
+        with (
+            patch.object(ItemPublisher, "get_item_types_to_publish", return_value=[(1, ItemType.LAKEHOUSE)]),
+            patch.object(ItemPublisher, "create", return_value=publisher),
+            patch.object(ItemPublisher, "_mark_skipped_items", return_value=[]),
+            patch(
+                "fabric_cicd._items._bulk_publish_dependencies.build_dynamic_variable_dependency_graph",
+                return_value=[],
+            ),
+            patch(
+                "fabric_cicd._items._bulk_publish_dependencies.get_async_provisioned_dependencies",
+                return_value={"Lakehouse.base": {"sqlendpoint"}},
+            ),
+            patch(
+                "fabric_cicd._items._bulk_publish_dependencies.compute_publish_batches",
+                return_value=two_batches,
+            ),
+        ):
+            ItemPublisher.publish_all_bulk(ws)
+
+        # The source item's async attribute is awaited before the refresh feeds the next tier
+        ws._wait_for_item_attribute_provisioning.assert_called_once_with("Lakehouse", "lh-guid", "base", "sqlendpoint")
+        assert ws._refresh_deployed_items.call_count == 1
+
+
+# =============================================================================
+# Async-Provisioned Attribute Dependencies (SQL endpoint / query URI)
+# =============================================================================
+
+
+class TestAsyncProvisionedDependencies:
+    """get_async_provisioned_dependencies maps to-be-published sources to their async attributes."""
+
+    def test_sqlendpoint_reference_mapped(self):
+        env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$sqlendpoint"}}]}
+        ws = _graph_workspace(env, deployed_items={}, repository_items={})
+        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH"}) == {"Lakehouse.LH": {"sqlendpoint"}}
+
+    def test_id_attribute_is_not_async(self):
+        """$id resolves immediately from the items list and needs no provisioning wait."""
+        env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$id"}}]}
+        ws = _graph_workspace(env, deployed_items={}, repository_items={})
+        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH"}) == {}
+
+    def test_reference_outside_publish_set_ignored(self):
+        env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$sqlendpoint"}}]}
+        ws = _graph_workspace(env, deployed_items={}, repository_items={})
+        assert get_async_provisioned_dependencies(ws, {"Notebook.NB"}) == {}
+
+    def test_multiple_attributes_aggregated_per_source(self):
+        env = {
+            "find_replace": [
+                {"replace_value": {"PPE": "$items.Lakehouse.LH.$sqlendpoint"}},
+                {"replace_value": {"PPE": "$items.Lakehouse.LH.$sqlendpointid"}},
+                {"replace_value": {"PPE": "$items.Eventhouse.EH.$queryserviceuri"}},
+            ]
+        }
+        ws = _graph_workspace(env, deployed_items={}, repository_items={})
+        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH", "Eventhouse.EH"}) == {
+            "Lakehouse.LH": {"sqlendpoint", "sqlendpointid"},
+            "Eventhouse.EH": {"queryserviceuri"},
+        }
+
+    def test_cross_workspace_reference_ignored(self):
+        """Cross-workspace items live in another workspace and impose no in-batch provisioning wait."""
+        env = {"find_replace": [{"replace_value": {"PPE": "$workspace.other.$items.Lakehouse.LH.$sqlendpoint"}}]}
+        ws = _graph_workspace(env, deployed_items={}, repository_items={})
+        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH"}) == {}
+
+
+# =============================================================================
+# Async Attribute Provisioning Wait (_wait_for_item_attribute_provisioning)
+# =============================================================================
+
+
+def _lakehouse_response(connection_string=None, provisioning_status=None):
+    """Build a Lakehouse GET response with optional SQL endpoint connection string / status."""
+    sql_props = {}
+    if connection_string is not None:
+        sql_props["connectionString"] = connection_string
+    if provisioning_status is not None:
+        sql_props["provisioningStatus"] = provisioning_status
+    properties = {"sqlEndpointProperties": sql_props} if sql_props else {}
+    return {"body": {"properties": properties}}
+
+
+class TestWaitForItemAttributeProvisioning:
+    """FabricWorkspace._wait_for_item_attribute_provisioning polls until an async attribute is ready."""
+
+    def _fake_ws(self, endpoint):
+        return SimpleNamespace(base_api_url="https://api/v1/workspaces/ws", endpoint=endpoint)
+
+    def test_returns_immediately_when_attribute_present(self):
+        endpoint = MagicMock()
+        endpoint.invoke.return_value = _lakehouse_response(connection_string="sql.endpoint.fabric")
+        ws = self._fake_ws(endpoint)
+
+        FabricWorkspace._wait_for_item_attribute_provisioning(ws, "Lakehouse", "guid-1", "LH", "sqlendpoint")
+
+        assert endpoint.invoke.call_count == 1
+
+    def test_polls_until_attribute_provisioned(self):
+        endpoint = MagicMock()
+        endpoint.invoke.side_effect = [
+            _lakehouse_response(provisioning_status="InProgress"),
+            _lakehouse_response(connection_string="sql.endpoint.fabric"),
+        ]
+        ws = self._fake_ws(endpoint)
+
+        with patch("fabric_cicd.fabric_workspace.handle_retry") as mock_retry:
+            FabricWorkspace._wait_for_item_attribute_provisioning(ws, "Lakehouse", "guid-1", "LH", "sqlendpoint")
+
+        assert endpoint.invoke.call_count == 2
+        assert mock_retry.call_count == 1
+
+    def test_raises_on_failed_provisioning(self):
+        endpoint = MagicMock()
+        endpoint.invoke.return_value = _lakehouse_response(provisioning_status="Failed")
+        ws = self._fake_ws(endpoint)
+
+        with pytest.raises(FailedPublishedItemStatusError):
+            FabricWorkspace._wait_for_item_attribute_provisioning(ws, "Lakehouse", "guid-1", "LH", "sqlendpoint")
+
+    def test_noop_for_empty_guid(self):
+        endpoint = MagicMock()
+        ws = self._fake_ws(endpoint)
+
+        FabricWorkspace._wait_for_item_attribute_provisioning(ws, "Lakehouse", "", "LH", "sqlendpoint")
+
+        endpoint.invoke.assert_not_called()
+
+    def test_noop_for_unmapped_attribute(self):
+        endpoint = MagicMock()
+        ws = self._fake_ws(endpoint)
+
+        # Notebook has no async-provisioned attribute mapping
+        FabricWorkspace._wait_for_item_attribute_provisioning(ws, "Notebook", "guid-1", "NB", "sqlendpoint")
+
+        endpoint.invoke.assert_not_called()
