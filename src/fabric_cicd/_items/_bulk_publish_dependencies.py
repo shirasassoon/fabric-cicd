@@ -1,15 +1,7 @@
 # Copyright (c) Microsoft Corporation.
 # Licensed under the MIT License.
 
-"""Dependency graph helpers for batched bulk item publishing.
-
-Refactored to build on microsoft/fabric-cicd#1102: instead of a private, ad-hoc
-`$items.*` string parser, this module reuses the single canonical parser
-(`parse_dynamic_variable` -> `ParsedDynamicVariable`) introduced by #1102. That
-gives one source of truth for variable parsing, correct handling of dotted item
-names, the legacy `$items.type.name.attribute` form, and cross-workspace forms,
-plus item-type/attribute validation.
-"""
+"""Dependency graph helpers for batched bulk item publishing."""
 
 import logging
 from collections.abc import Iterator
