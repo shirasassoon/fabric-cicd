@@ -362,8 +362,7 @@ class ItemPublisher(Publisher):
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
 
-            # Build a dependency graph from dynamic replacement variables when the parameter file has them.
-            # An empty graph (the common case) yields a single batch, identical to a single bulk call.
+            # Build dynamic variable dependencies; none yields a single batch
             dependency_edges: list[tuple[str, str]] = []
             async_source_map: dict[str, set[str]] = {}
             if fabric_workspace_obj.contains_param_vars:
@@ -383,20 +382,20 @@ class ItemPublisher(Publisher):
                     raise InputError(msg, logger)
 
                 if len(batches) > 1:
-                    batch_names = sorted(f"{item.type}: {name}" for name, item, _ in batch_items)
-                    logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}: {batch_names}")
+                    logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}")
+                    logger.debug(
+                        "Publishing batch %s items: %s",
+                        batch_index + 1,
+                        sorted(f"{item.type}: {name}" for name, item, _ in batch_items),
+                    )
 
                 fabric_workspace_obj._publish_items(
                     batch_items, skipped_items=skipped_items if batch_index == 0 else None
                 )
 
-                # Between batches: refresh deployed items so the next batch can resolve $items.* variables
-                # to real GUIDs. Drop resolved $items.* cache entries (deployed state changed) while keeping
-                # $workspace.* entries, which reference other workspaces that do not change here.
+                # Refresh deployed items and invalidate cached $items.* values between batches
                 if batch_index < len(batches) - 1:
-                    # Wait for asynchronously provisioned attributes (SQL endpoint / Eventhouse query URI)
-                    # of just-deployed source items referenced by a later tier, so the refresh below captures
-                    # real values instead of empty strings.
+                    # Wait for async attributes needed by later batches before refreshing
                     for b_item_name, b_item, _b_publisher in batch_items:
                         referenced_attrs = async_source_map.get(f"{b_item.type}.{b_item_name}")
                         if not referenced_attrs:
