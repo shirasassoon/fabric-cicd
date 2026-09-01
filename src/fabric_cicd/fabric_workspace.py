@@ -322,7 +322,7 @@ class FabricWorkspace:
                 )
                 return
 
-            # Terminal-failure detection where the API exposes a provisioning status (Lakehouse / Mirrored Database).
+            # Terminal-failure detection where the API exposes a provisioning status (Lakehouse / Mirrored Database)
             provisioning_status = dpath.get(
                 response, "body/properties/sqlEndpointProperties/provisioningStatus", default=None
             )

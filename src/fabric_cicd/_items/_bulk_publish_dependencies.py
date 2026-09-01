@@ -21,10 +21,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Item attributes that are provisioned asynchronously after item creation and therefore
-# require a provisioning wait between bulk-publish tiers before a downstream item can resolve
-# them (mirrors constants.PROPERTY_PATH_ATTR_MAPPING; everything except the immediately
-# available "id").
+# Asynchronously provisioned attributes that require waits between dependent publish tiers
+# (mirrors constants.PROPERTY_PATH_ATTR_MAPPING, excluding the immediately available "id").
 ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointid", "queryserviceuri"})
 
 
@@ -118,11 +116,13 @@ def get_async_provisioned_dependencies(
     """
     result: dict[str, set[str]] = {}
 
+    # Find current-workspace references to asynchronously provisioned attributes
     for _param_dict, env_value in _iter_dynamic_replace_values(workspace_obj):
         parsed = _parse_current_workspace_item(env_value)
         if parsed is None or parsed.attribute not in ASYNC_PROVISIONED_ATTRIBUTES:
             continue
 
+        # Record only source items created in this publish operation
         key = f"{parsed.item_type}.{parsed.item_name}"
         if key in publish_item_keys:
             result.setdefault(key, set()).add(parsed.attribute)
@@ -154,11 +154,11 @@ def build_dynamic_variable_dependency_graph(
         ref_type, ref_name = referenced
         ref_key = f"{ref_type}.{ref_name}"
 
-        # Already deployed -> resolvable immediately, no ordering constraint.
+        # Already deployed -> resolvable immediately, no ordering constraint
         if ref_type in workspace_obj.deployed_items and ref_name in workspace_obj.deployed_items[ref_type]:
             continue
 
-        # Only items new in this batch impose ordering.
+        # Only items new in this batch impose ordering
         if ref_key not in publish_item_keys:
             continue
 
@@ -181,6 +181,7 @@ def _get_referencing_item_keys(
     Returns:
         A list of item keys ("ItemType.ItemName") that this parameter applies to.
     """
+    # Normalize the parameter entry's optional filters
     filter_type = param_dict.get("item_type")
     filter_name = param_dict.get("item_name")
     if repository_directory is not None:
@@ -189,6 +190,7 @@ def _get_referencing_item_keys(
         process_input_path(repository_directory, param_dict.get("file_path")) if repository_directory else None
     )
 
+    # Collect repository items that satisfy every specified filter
     keys = []
     for item_type, items in repository_items.items():
         if filter_type is not None and item_type != filter_type:
@@ -230,11 +232,13 @@ def compute_publish_batches(
     if not dependency_edges:
         return [items_with_context]
 
+    # Index publish contexts by their dependency-graph keys
     item_key_to_context: dict[str, tuple[str, object, object]] = {}
     for item_name, item, publisher in items_with_context:
         key = f"{item.type}.{item_name}"
         item_key_to_context[key] = (item_name, item, publisher)
 
+    # Build in-degrees and reverse edges for Kahn's algorithm
     publish_item_keys = set(item_key_to_context.keys())
     in_degree: dict[str, int] = {k: 0 for k in publish_item_keys}
     dependents: dict[str, list[str]] = {k: [] for k in publish_item_keys}
@@ -247,6 +251,7 @@ def compute_publish_batches(
     batches: list[list[tuple[str, object, object]]] = []
     current_batch_keys = [k for k, deg in in_degree.items() if deg == 0]
 
+    # Process each dependency-free tier as one publish batch
     processed = set()
     while current_batch_keys:
         batch = []
@@ -264,6 +269,7 @@ def compute_publish_batches(
             batches.append(batch)
         current_batch_keys = next_batch_keys
 
+    # Unprocessed items belong to at least one dependency cycle
     if len(processed) < len(publish_item_keys):
         cycle_keys = sorted(publish_item_keys - processed)
         msg = f"Circular dynamic variable dependency detected among: {', '.join(cycle_keys)}"
