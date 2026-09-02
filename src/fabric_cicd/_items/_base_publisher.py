@@ -372,13 +372,12 @@ class ItemPublisher(Publisher):
 
             batches = compute_publish_batches(items_with_context, dependency_edges)
 
-            # Validate every batch against the API item-count limit before publishing any of them,
-            # so an oversized batch fails fast instead of leaving a partial (batch-by-batch) deployment.
+            # Validate all batch sizes before publishing to prevent partial deployment
             for batch_index, batch_items in enumerate(batches):
                 batch_count = len(batch_items)
                 if batch_count > constants.BULK_ITEM_COUNT_LIMIT:
                     msg = (
-                        f"Bulk publish batch {batch_index} item count ({batch_count}) exceeds the API limit "
+                        f"Bulk publish batch {batch_index + 1} item count ({batch_count}) exceeds the API limit "
                         f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
                     )
                     raise InputError(msg, logger)
