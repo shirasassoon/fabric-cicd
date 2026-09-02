@@ -176,7 +176,7 @@ def build_dynamic_variable_dependency_graph(
             continue
 
         cache_key = (
-            param_dict.get("item_type"),
+            _hashable_filter(param_dict.get("item_type")),
             _hashable_filter(param_dict.get("item_name")),
             _hashable_filter(param_dict.get("file_path")),
         )
@@ -221,6 +221,10 @@ def _get_referencing_item_keys(
     filter_type = param_dict.get("item_type")
     filter_name = param_dict.get("item_name")
     filter_paths = process_input_path(resolved_repo_dir, param_dict.get("file_path")) if resolved_repo_dir else None
+    # process_input_path resolves relative/absolute paths but returns wildcard matches unresolved;
+    # resolve once here so comparisons against resolved item paths are consistent (matches legacy behavior).
+    if filter_paths is not None:
+        filter_paths = [p.resolve() for p in filter_paths]
 
     # Collect repository items that satisfy every specified filter
     keys = []
