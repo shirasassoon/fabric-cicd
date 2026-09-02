@@ -1139,7 +1139,7 @@ class TestBulkPublishTieredExecution:
 
     def test_oversized_later_batch_fails_before_any_publish(self):
         """An oversized batch anywhere raises before any batch is published (no partial deployment)."""
-        ws, publisher, base, dep = self._workspace_with_two_items()
+        ws, publisher, base, _dep = self._workspace_with_two_items()
         oversized = [("x", SimpleNamespace(type="Notebook"), publisher)] * (constants.BULK_ITEM_COUNT_LIMIT + 1)
         batches = [[("base", base, publisher)], oversized]
 
