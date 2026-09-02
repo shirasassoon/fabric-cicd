@@ -1006,6 +1006,19 @@ class TestBulkPublishDependencyGraph:
 
         assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL"}) == []
 
+    def test_list_valued_item_type_filter_does_not_crash(self):
+        """A list-valued item_type filter is hashable for the referencing cache and does not raise."""
+        env = {
+            "find_replace": [
+                {"item_type": ["DataPipeline", "Notebook"], "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        # A list item_type never matches a str item_type (preserved quirk) -> no referencing items -> no edges
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == []
+
     def test_has_unfiltered_items_variable_true(self):
         """An $items.* replace_value with no filter is reported as unfiltered."""
         env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$id"}}]}
@@ -1123,6 +1136,27 @@ class TestBulkPublishTieredExecution:
         assert ws._refresh_deployed_items.call_count == 1
         # Stale $items.* cache entry dropped between tiers; $workspace.* entry retained
         assert ws._dynamic_var_cache == {"$workspace.$id": "wsid"}
+
+    def test_oversized_later_batch_fails_before_any_publish(self):
+        """An oversized batch anywhere raises before any batch is published (no partial deployment)."""
+        ws, publisher, base, dep = self._workspace_with_two_items()
+        oversized = [("x", SimpleNamespace(type="Notebook"), publisher)] * (constants.BULK_ITEM_COUNT_LIMIT + 1)
+        batches = [[("base", base, publisher)], oversized]
+
+        with (
+            patch.object(ItemPublisher, "get_item_types_to_publish", return_value=[(1, ItemType.NOTEBOOK)]),
+            patch.object(ItemPublisher, "create", return_value=publisher),
+            patch.object(ItemPublisher, "_mark_skipped_items", return_value=[]),
+            patch(
+                "fabric_cicd._items._bulk_publish_dependencies.compute_publish_batches",
+                return_value=batches,
+            ),
+            pytest.raises(InputError, match="exceeds the API limit"),
+        ):
+            ItemPublisher.publish_all_bulk(ws)
+
+        # Nothing was published because validation fails fast for all batches upfront
+        assert ws._publish_items.call_count == 0
 
     def test_single_batch_makes_no_refresh(self):
         ws, publisher, base, dep = self._workspace_with_two_items()

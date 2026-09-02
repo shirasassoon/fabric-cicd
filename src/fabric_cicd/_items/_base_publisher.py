@@ -372,6 +372,8 @@ class ItemPublisher(Publisher):
 
             batches = compute_publish_batches(items_with_context, dependency_edges)
 
+            # Validate every batch against the API item-count limit before publishing any of them,
+            # so an oversized batch fails fast instead of leaving a partial (batch-by-batch) deployment.
             for batch_index, batch_items in enumerate(batches):
                 batch_count = len(batch_items)
                 if batch_count > constants.BULK_ITEM_COUNT_LIMIT:
@@ -381,6 +383,7 @@ class ItemPublisher(Publisher):
                     )
                     raise InputError(msg, logger)
 
+            for batch_index, batch_items in enumerate(batches):
                 if len(batches) > 1:
                     logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}")
                     logger.debug(
@@ -396,14 +399,15 @@ class ItemPublisher(Publisher):
                 # Refresh deployed items and invalidate cached $items.* values between batches
                 if batch_index < len(batches) - 1:
                     # Wait for async attributes needed by later batches before refreshing
-                    for b_item_name, b_item, _b_publisher in batch_items:
-                        referenced_attrs = async_source_map.get(f"{b_item.type}.{b_item_name}")
-                        if not referenced_attrs:
-                            continue
-                        for attribute_name in sorted(referenced_attrs):
-                            fabric_workspace_obj._wait_for_item_attribute_provisioning(
-                                b_item.type, b_item.guid, b_item_name, attribute_name
-                            )
+                    provisioning_tasks = (
+                        (item, item_name, attribute_name)
+                        for item_name, item, _publisher in batch_items
+                        for attribute_name in sorted(async_source_map.get(f"{item.type}.{item_name}", ()))
+                    )
+                    for item, item_name, attribute_name in provisioning_tasks:
+                        fabric_workspace_obj._wait_for_item_attribute_provisioning(
+                            item.type, item.guid, item_name, attribute_name
+                        )
 
                     fabric_workspace_obj._dynamic_var_cache = {
                         k: v for k, v in fabric_workspace_obj._dynamic_var_cache.items() if k.startswith("$workspace.")
