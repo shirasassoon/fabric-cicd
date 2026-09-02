@@ -65,10 +65,16 @@ def _resolve_current_workspace_item_ref(env_value: str) -> Optional[tuple[str, s
     return parsed.item_type, parsed.item_name
 
 
-def _iter_dynamic_replace_values(workspace_obj: "FabricWorkspace") -> Iterator[tuple[dict, str]]:
+def _iter_dynamic_replace_values(
+    workspace_obj: "FabricWorkspace",
+) -> Iterator[tuple[dict, str, Optional["ParsedDynamicVariable"]]]:
     """
-    Yields (param_dict, env_value) for every find_replace / key_value_replace entry whose
-    replace_value resolves to a string for the active environment.
+    Yields (param_dict, env_value, parsed) for every find_replace / key_value_replace entry
+    whose replace_value resolves to a string for the active environment.
+
+    Each value is parsed exactly once here (single pass), so consumers can reuse `parsed`
+    instead of re-parsing. `parsed` is the current-workspace item variable, or None when the
+    value is not a current-workspace $items.* reference (plain string or $workspace.* variable).
     """
     for param_name in ("find_replace", "key_value_replace"):
         for param_dict in workspace_obj.environment_parameter.get(param_name, []):
@@ -78,7 +84,7 @@ def _iter_dynamic_replace_values(workspace_obj: "FabricWorkspace") -> Iterator[t
             processed = process_environment_key(workspace_obj.environment, dict(replace_value))
             env_value = processed.get(workspace_obj.environment)
             if isinstance(env_value, str):
-                yield param_dict, env_value
+                yield param_dict, env_value, _parse_current_workspace_item(env_value)
 
 
 def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
@@ -90,8 +96,8 @@ def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
     all items as dependents of the referenced item, so callers should fall back to standard
     (serial) deployment instead.
     """
-    for param_dict, env_value in _iter_dynamic_replace_values(workspace_obj):
-        if _resolve_current_workspace_item_ref(env_value) is None:
+    for param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
+        if parsed is None:
             continue
         if not any(param_dict.get(f) for f in ("item_type", "item_name", "file_path")):
             return True
@@ -117,8 +123,7 @@ def get_async_provisioned_dependencies(
     result: dict[str, set[str]] = {}
 
     # Find current-workspace references to asynchronously provisioned attributes
-    for _param_dict, env_value in _iter_dynamic_replace_values(workspace_obj):
-        parsed = _parse_current_workspace_item(env_value)
+    for _param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
         if parsed is None or parsed.attribute not in ASYNC_PROVISIONED_ATTRIBUTES:
             continue
 
@@ -145,13 +150,21 @@ def build_dynamic_variable_dependency_graph(
         upfront and a single bulk call is sufficient.
     """
     edges: list[tuple[str, str]] = []
+    seen_edges: set[tuple[str, str]] = set()
 
-    for param_dict, env_value in _iter_dynamic_replace_values(workspace_obj):
-        referenced = _resolve_current_workspace_item_ref(env_value)
-        if referenced is None:
+    repository_items = workspace_obj.repository_items
+    # Resolve the repository root once; reused for every file_path filter below.
+    resolved_repo_dir = workspace_obj.repository_directory.resolve() if workspace_obj.repository_directory else None
+    # Lazily memoize each item's resolved path (only touched when a file_path filter is present).
+    path_cache: dict[str, Path] = {}
+    # Cache referencing-item lookups by their filter signature; identical filters reuse the result.
+    referencing_cache: dict[tuple, list[str]] = {}
+
+    for param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
+        if parsed is None:
             continue
 
-        ref_type, ref_name = referenced
+        ref_type, ref_name = parsed.item_type, parsed.item_name
         ref_key = f"{ref_type}.{ref_name}"
 
         # Already deployed -> resolvable immediately, no ordering constraint
@@ -162,21 +175,44 @@ def build_dynamic_variable_dependency_graph(
         if ref_key not in publish_item_keys:
             continue
 
-        referencing_keys = _get_referencing_item_keys(
-            param_dict, workspace_obj.repository_items, workspace_obj.repository_directory
+        cache_key = (
+            param_dict.get("item_type"),
+            _hashable_filter(param_dict.get("item_name")),
+            _hashable_filter(param_dict.get("file_path")),
         )
+        referencing_keys = referencing_cache.get(cache_key)
+        if referencing_keys is None:
+            referencing_keys = _get_referencing_item_keys(param_dict, repository_items, resolved_repo_dir, path_cache)
+            referencing_cache[cache_key] = referencing_keys
+
         for referencing_key in referencing_keys:
             if referencing_key != ref_key and referencing_key in publish_item_keys:
-                edges.append((referencing_key, ref_key))
+                edge = (referencing_key, ref_key)
+                if edge not in seen_edges:
+                    seen_edges.add(edge)
+                    edges.append(edge)
 
     return edges
 
 
+def _hashable_filter(value: object) -> object:
+    """Normalizes an optional filter value (None, str, or list) to a hashable cache-key component."""
+    if isinstance(value, list):
+        return tuple(value)
+    return value
+
+
 def _get_referencing_item_keys(
-    param_dict: dict, repository_items: dict, repository_directory: Optional[Path] = None
+    param_dict: dict,
+    repository_items: dict,
+    resolved_repo_dir: Optional[Path] = None,
+    path_cache: Optional[dict[str, Path]] = None,
 ) -> list[str]:
     """
     Determines which items a parameter entry applies to based on item_type/item_name/file_path filters.
+
+    `resolved_repo_dir` must already be resolved by the caller. Item paths are resolved lazily and only
+    when a file_path filter is present, memoized in `path_cache` to avoid repeated filesystem syscalls.
 
     Returns:
         A list of item keys ("ItemType.ItemName") that this parameter applies to.
@@ -184,11 +220,7 @@ def _get_referencing_item_keys(
     # Normalize the parameter entry's optional filters
     filter_type = param_dict.get("item_type")
     filter_name = param_dict.get("item_name")
-    if repository_directory is not None:
-        repository_directory = repository_directory.resolve()
-    filter_paths = (
-        process_input_path(repository_directory, param_dict.get("file_path")) if repository_directory else None
-    )
+    filter_paths = process_input_path(resolved_repo_dir, param_dict.get("file_path")) if resolved_repo_dir else None
 
     # Collect repository items that satisfy every specified filter
     keys = []
@@ -198,19 +230,29 @@ def _get_referencing_item_keys(
         for item_name, item in items.items():
             if filter_name is not None and item_name != filter_name:
                 continue
-            if filter_paths is not None and not any(
-                _is_path_in_item(file_path, item.path) for file_path in filter_paths
-            ):
-                continue
+            if filter_paths is not None:
+                item_key = f"{item_type}.{item_name}"
+                item_path = path_cache.get(item_key) if path_cache is not None else None
+                if item_path is None:
+                    item_path = item.path.resolve()
+                    if path_cache is not None:
+                        path_cache[item_key] = item_path
+                if not any(_is_path_in_item(file_path, item_path) for file_path in filter_paths):
+                    continue
             keys.append(f"{item_type}.{item_name}")
 
     return keys
 
 
 def _is_path_in_item(file_path: Path, item_path: Path) -> bool:
-    """Returns True when file_path is contained by the repository item's directory."""
+    """
+    Returns True when file_path is contained by the repository item's directory.
+
+    Both arguments are expected to be already-resolved absolute paths (filter paths come pre-resolved
+    from process_input_path; item paths are resolved by the caller), so no resolve() is done here.
+    """
     try:
-        file_path.resolve().relative_to(item_path.resolve())
+        file_path.relative_to(item_path)
         return True
     except ValueError:
         return False
@@ -231,6 +273,9 @@ def compute_publish_batches(
     """
     if not dependency_edges:
         return [items_with_context]
+
+    # Defensively dedupe edges (order-preserving) so in-degree counts are not inflated by duplicates.
+    dependency_edges = list(dict.fromkeys(dependency_edges))
 
     # Index publish contexts by their dependency-graph keys
     item_key_to_context: dict[str, tuple[str, object, object]] = {}
