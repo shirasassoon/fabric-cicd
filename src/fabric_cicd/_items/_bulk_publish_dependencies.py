@@ -15,29 +15,20 @@ from fabric_cicd._parameter._utils import (
     process_environment_key,
     process_input_path,
 )
+from fabric_cicd.constants import ASYNC_PROVISIONED_ATTRIBUTES
 
 if TYPE_CHECKING:
     from fabric_cicd.fabric_workspace import FabricWorkspace
 
 logger = logging.getLogger(__name__)
 
-# Asynchronously provisioned attributes that require waits between dependent publish tiers
-# (mirrors constants.PROPERTY_PATH_ATTR_MAPPING, excluding the immediately available "id").
-ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointid", "queryserviceuri"})
 
-
-def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVariable"]:
-    """
-    Returns the parsed variable when env_value is a *current-workspace* $items.* variable.
-
-    Returns None for non-variable strings, $workspace.* variables, and cross-workspace item
-    variables ($workspace.<name>.$items.*), whose targets live in another workspace and never
-    create an in-batch dependency here.
-    """
-    if not isinstance(env_value, str) or not env_value.startswith("$"):
+def _parse_current_workspace_item(dyn_var: str) -> Optional["ParsedDynamicVariable"]:
+    """Parse a current-workspace $items.* variable, or return None."""
+    if not dyn_var.startswith("$"):
         return None
 
-    parsed = parse_dynamic_variable(env_value)
+    parsed = parse_dynamic_variable(dyn_var)
 
     if parsed.kind == "item" and parsed.workspace_name is None:
         return parsed
@@ -45,37 +36,10 @@ def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVari
     return None
 
 
-def _resolve_current_workspace_item_ref(env_value: str) -> Optional[tuple[str, str]]:
-    """
-    Returns (item_type, item_name) when env_value is a *current-workspace* $items.* variable.
-
-    Returns None for:
-      - non-variable strings (no leading '$')
-      - $workspace.* variables (workspace id/name/name_encoded)
-      - cross-workspace item variables ($workspace.<name>.$items.*), whose target lives
-        in another workspace and therefore never creates an in-batch dependency here.
-
-    Parsing is delegated to the canonical dynamic-variable parser. Every variable is
-    validated when the parameter file is loaded (at workspace initialization), so by the
-    time bulk publish runs `parse_dynamic_variable` resolves without raising here.
-    """
-    parsed = _parse_current_workspace_item(env_value)
-    if parsed is None:
-        return None
-    return parsed.item_type, parsed.item_name
-
-
 def _iter_dynamic_replace_values(
     workspace_obj: "FabricWorkspace",
 ) -> Iterator[tuple[dict, str, Optional["ParsedDynamicVariable"]]]:
-    """
-    Yields (param_dict, env_value, parsed) for every find_replace / key_value_replace entry
-    whose replace_value resolves to a string for the active environment.
-
-    Each value is parsed exactly once here (single pass), so consumers can reuse `parsed`
-    instead of re-parsing. `parsed` is the current-workspace item variable, or None when the
-    value is not a current-workspace $items.* reference (plain string or $workspace.* variable).
-    """
+    """Yield each active string replacement and its current-workspace item variable, if any."""
     for param_name in ("find_replace", "key_value_replace"):
         for param_dict in workspace_obj.environment_parameter.get(param_name, []):
             replace_value = param_dict.get("replace_value")
@@ -88,14 +52,7 @@ def _iter_dynamic_replace_values(
 
 
 def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
-    """
-    Returns True if any find_replace or key_value_replace entry uses a current-workspace
-    $items.* variable in replace_value without any item_type, item_name, or file_path filter.
-
-    When this is the case, dependency scope cannot be narrowed and bulk publish would treat
-    all items as dependents of the referenced item, so callers should fall back to standard
-    (serial) deployment instead.
-    """
+    """Return whether an $items.* variable is unfiltered and requires serial deployment."""
     for param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
         if parsed is None:
             continue
@@ -109,16 +66,9 @@ def get_async_provisioned_dependencies(
     workspace_obj: "FabricWorkspace", publish_item_keys: set[str]
 ) -> dict[str, set[str]]:
     """
-    Maps each to-be-published source item to the asynchronously provisioned attributes referenced on it.
+    Map published source items to referenced, asynchronously provisioned attributes.
 
-    Scans find_replace / key_value_replace entries for current-workspace $items.* variables whose
-    attribute is asynchronously provisioned (SQL endpoint / Eventhouse query URI). Only source items
-    that are part of the current publish set are included, since already-deployed items are already
-    provisioned and impose no tiering.
-
-    Returns:
-        A dict of "ItemType.ItemName" -> set of async attribute names (e.g. {"sqlendpoint"}). Empty
-        when no such references exist, in which case no between-tier provisioning wait is needed.
+    Already-deployed items need no tiering and are excluded.
     """
     result: dict[str, set[str]] = {}
 
@@ -139,7 +89,7 @@ def build_dynamic_variable_dependency_graph(
     workspace_obj: "FabricWorkspace", publish_item_keys: set[str]
 ) -> list[tuple[str, str]]:
     """
-    Builds a dependency graph from current-workspace $items.* variables in the parameter file.
+    Build dependency edges from current-workspace $items.* variables.
 
     For each replace_value that references an item which is NOT already deployed but IS in the
     current publish set, an edge (referencing_item_key -> referenced_item_key) is added, where
@@ -153,11 +103,9 @@ def build_dynamic_variable_dependency_graph(
     seen_edges: set[tuple[str, str]] = set()
 
     repository_items = workspace_obj.repository_items
-    # Resolve the repository root once; reused for every file_path filter below.
+    # Reuse resolved paths and filter matches across parameter entries
     resolved_repo_dir = workspace_obj.repository_directory.resolve() if workspace_obj.repository_directory else None
-    # Lazily memoize each item's resolved path (only touched when a file_path filter is present).
     path_cache: dict[str, Path] = {}
-    # Cache referencing-item lookups by their filter signature; identical filters reuse the result.
     referencing_cache: dict[tuple, list[str]] = {}
 
     for param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
@@ -167,14 +115,15 @@ def build_dynamic_variable_dependency_graph(
         ref_type, ref_name = parsed.item_type, parsed.item_name
         ref_key = f"{ref_type}.{ref_name}"
 
-        # Already deployed -> resolvable immediately, no ordering constraint
+        # Deployed references impose no ordering constraint
         if ref_type in workspace_obj.deployed_items and ref_name in workspace_obj.deployed_items[ref_type]:
             continue
 
-        # Only items new in this batch impose ordering
+        # Only references created in this batch impose ordering
         if ref_key not in publish_item_keys:
             continue
 
+        # Match parameter filters to referencing items once per filter set
         cache_key = (
             _hashable_filter(param_dict.get("item_type")),
             _hashable_filter(param_dict.get("item_name")),
@@ -185,6 +134,7 @@ def build_dynamic_variable_dependency_graph(
             referencing_keys = _get_referencing_item_keys(param_dict, repository_items, resolved_repo_dir, path_cache)
             referencing_cache[cache_key] = referencing_keys
 
+        # Add unique in-batch edges, excluding self-references
         for referencing_key in referencing_keys:
             if referencing_key != ref_key and referencing_key in publish_item_keys:
                 edge = (referencing_key, ref_key)
@@ -209,24 +159,17 @@ def _get_referencing_item_keys(
     path_cache: Optional[dict[str, Path]] = None,
 ) -> list[str]:
     """
-    Determines which items a parameter entry applies to based on item_type/item_name/file_path filters.
+    Return item keys matching a parameter entry's type, name, and path filters.
 
-    `resolved_repo_dir` must already be resolved by the caller. Item paths are resolved lazily and only
-    when a file_path filter is present, memoized in `path_cache` to avoid repeated filesystem syscalls.
-
-    Returns:
-        A list of item keys ("ItemType.ItemName") that this parameter applies to.
+    `resolved_repo_dir` must be resolved. Item paths are resolved lazily and cached.
     """
-    # Normalize the parameter entry's optional filters
     filter_type = param_dict.get("item_type")
     filter_name = param_dict.get("item_name")
     filter_paths = process_input_path(resolved_repo_dir, param_dict.get("file_path")) if resolved_repo_dir else None
-    # process_input_path resolves relative/absolute paths but returns wildcard matches unresolved;
-    # resolve once here so comparisons against resolved item paths are consistent (matches legacy behavior).
+    # Wildcard matches may be unresolved, unlike explicit paths
     if filter_paths is not None:
         filter_paths = [p.resolve() for p in filter_paths]
 
-    # Collect repository items that satisfy every specified filter
     keys = []
     for item_type, items in repository_items.items():
         if filter_type is not None and item_type != filter_type:
@@ -249,12 +192,7 @@ def _get_referencing_item_keys(
 
 
 def _is_path_in_item(file_path: Path, item_path: Path) -> bool:
-    """
-    Returns True when file_path is contained by the repository item's directory.
-
-    Both arguments are expected to be already-resolved absolute paths (filter paths come pre-resolved
-    from process_input_path; item paths are resolved by the caller), so no resolve() is done here.
-    """
+    """Return whether a resolved file path is within a resolved item directory."""
     try:
         file_path.relative_to(item_path)
         return True
@@ -267,31 +205,30 @@ def compute_publish_batches(
     dependency_edges: list[tuple[str, str]],
 ) -> list[list[tuple[str, object, object]]]:
     """
-    Computes publish batches from a dependency graph using topological sort (Kahn's algorithm).
+    Compute dependency tiers with Kahn's topological-sort algorithm.
 
-    Items with no dependencies (or whose dependencies are already deployed) go into Batch 0;
-    items depending on Batch 0 go into Batch 1, and so on. No edges -> a single batch.
+    Dependency-free items enter the first batch. No edges produce one batch.
 
     Raises:
-        InputError: If a circular dependency is detected.
+        InputError: If dependencies contain a cycle.
     """
     if not dependency_edges:
         return [items_with_context]
 
-    # Defensively dedupe edges (order-preserving) so in-degree counts are not inflated by duplicates.
+    # Preserve edge order while deduplicating
     dependency_edges = list(dict.fromkeys(dependency_edges))
 
-    # Index publish contexts by their dependency-graph keys
+    # Index publish contexts by graph key
     item_key_to_context: dict[str, tuple[str, object, object]] = {}
     for item_name, item, publisher in items_with_context:
         key = f"{item.type}.{item_name}"
         item_key_to_context[key] = (item_name, item, publisher)
 
-    # Build in-degrees and reverse edges for Kahn's algorithm
     publish_item_keys = set(item_key_to_context.keys())
     in_degree: dict[str, int] = {k: 0 for k in publish_item_keys}
     dependents: dict[str, list[str]] = {k: [] for k in publish_item_keys}
 
+    # Build in-degrees and reverse edges for Kahn's algorithm
     for referencing, referenced in dependency_edges:
         if referencing in publish_item_keys and referenced in publish_item_keys:
             in_degree[referencing] = in_degree.get(referencing, 0) + 1
@@ -300,7 +237,7 @@ def compute_publish_batches(
     batches: list[list[tuple[str, object, object]]] = []
     current_batch_keys = [k for k, deg in in_degree.items() if deg == 0]
 
-    # Process each dependency-free tier as one publish batch
+    # Publish each dependency-free tier as one batch
     processed = set()
     while current_batch_keys:
         batch = []
@@ -318,7 +255,7 @@ def compute_publish_batches(
             batches.append(batch)
         current_batch_keys = next_batch_keys
 
-    # Unprocessed items belong to at least one dependency cycle
+    # Unprocessed items belong to a dependency cycle
     if len(processed) < len(publish_item_keys):
         cycle_keys = sorted(publish_item_keys - processed)
         msg = f"Circular dynamic variable dependency detected among: {', '.join(cycle_keys)}"

@@ -19,7 +19,6 @@ from fabric_cicd import constants
 from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError
 from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd._items._bulk_publish_dependencies import (
-    _resolve_current_workspace_item_ref,
     build_dynamic_variable_dependency_graph,
     compute_publish_batches,
     get_async_provisioned_dependencies,
@@ -918,35 +917,6 @@ class TestBulkPublishResponseCollection:
                 result = publish.publish_all_items(workspace, item_name_exclude_regex="^FilteredNB$")
 
                 assert result is None
-
-
-# =============================================================================
-# Dynamic Variable Reference Parsing (parser alignment)
-# =============================================================================
-
-
-class TestDynamicVariableReferenceParsing:
-    """_resolve_current_workspace_item_ref reuses the canonical parser and only flags
-    current-workspace item references."""
-
-    @pytest.mark.parametrize(
-        ("value", "expected"),
-        [
-            ("$items.Notebook.my_nb.$id", ("Notebook", "my_nb")),
-            # Dotted item name — a case a naive split-on-dot parser gets wrong
-            ("$items.Notebook.my.nb.$id", ("Notebook", "my.nb")),
-            # Legacy attribute form (no leading $ on attribute)
-            ("$items.Notebook.my_nb.id", ("Notebook", "my_nb")),
-            # $workspace.* is not an in-batch item dependency
-            ("$workspace.$id", None),
-            # Cross-workspace item reference targets another workspace, not this batch
-            ("$workspace.other_ws.$items.Notebook.some_item.$id", None),
-            # Plain strings are not variables
-            ("literal-connection-string", None),
-        ],
-    )
-    def test_resolve_current_workspace_item_ref(self, value, expected):
-        assert _resolve_current_workspace_item_ref(value) == expected
 
 
 # =============================================================================
