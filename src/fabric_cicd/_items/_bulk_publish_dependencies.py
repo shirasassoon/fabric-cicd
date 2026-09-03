@@ -23,12 +23,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _parse_current_workspace_item(dyn_var: str) -> Optional["ParsedDynamicVariable"]:
+def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVariable"]:
     """Parse a current-workspace $items.* variable, or return None."""
-    if not dyn_var.startswith("$"):
+    if not env_value.startswith("$"):
         return None
 
-    parsed = parse_dynamic_variable(dyn_var)
+    parsed = parse_dynamic_variable(env_value)
 
     if parsed.kind == "item" and parsed.workspace_name is None:
         return parsed
