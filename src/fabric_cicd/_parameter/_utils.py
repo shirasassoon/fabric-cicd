@@ -177,6 +177,15 @@ def extract_replace_value(workspace_obj: FabricWorkspace, replace_value: str, ge
             return None
         return replace_value
 
+    # Check the dynamic replacement variable cache first (only populated during bulk publish)
+    if (
+        not get_dataflow_name
+        and workspace_obj.bulk_publish_enabled
+        and replace_value in workspace_obj._dynamic_var_cache
+    ):
+        logger.debug(f"Cache hit for dynamic replacement variable: {replace_value}")
+        return workspace_obj._dynamic_var_cache[replace_value]
+
     # Parse and validate the dynamic variable to determine its kind and components
     parsed_variable = parse_dynamic_variable(replace_value)
 
@@ -186,11 +195,17 @@ def extract_replace_value(workspace_obj: FabricWorkspace, replace_value: str, ge
             msg = "Invalid replace_value variable: '$workspace'. Expected format to get dataflow name: '$items.type.name.$attribute'"
             raise InputError(msg, logger)
 
-        return _extract_workspace_id(workspace_obj, replace_value, parsed_variable)
+        resolved = _extract_workspace_id(workspace_obj, replace_value, parsed_variable)
+        if workspace_obj.bulk_publish_enabled:
+            workspace_obj._dynamic_var_cache[replace_value] = resolved
+        return resolved
 
     # Current-workspace item variables resolve against deployed workspace items
     if parsed_variable.kind == "item":
-        return _extract_item_attribute(workspace_obj, get_dataflow_name, parsed_variable)
+        resolved = _extract_item_attribute(workspace_obj, get_dataflow_name, parsed_variable)
+        if workspace_obj.bulk_publish_enabled and not get_dataflow_name and resolved is not None:
+            workspace_obj._dynamic_var_cache[replace_value] = resolved
+        return resolved
 
     msg = constants.DYNAMIC_VARIABLE_MSGS["invalid_format"].format(replace_value)
     raise ParsingError(msg, logger)

@@ -306,17 +306,26 @@ class ItemPublisher(Publisher):
     @staticmethod
     def publish_all_bulk(fabric_workspace_obj: "FabricWorkspace") -> list["ItemPublisher"]:
         """
-        Execute a single bulk publish across all item types in scope.
+        Execute bulk publish across all item types in scope, with batched (tiered) execution
+        when dynamic replacement variable dependencies require it.
 
         Lifecycle:
             1. pre_publish_all() — per type
             2. get_items_to_publish() — per type, collect into one pool
-            3. _publish_items() — single cross-type API call
-            4. post_publish_all() — per type
+            3. Build dependency graph from $items.* dynamic replacement variables
+            4. Compute publish batches (topological sort)
+            5. For each batch: _publish_items() → refresh deployed items between batches
+            6. post_publish_all() — per type
 
         Returns:
             List of publishers that have async checks pending.
         """
+        from fabric_cicd._items._bulk_publish_dependencies import (
+            build_dynamic_variable_dependency_graph,
+            compute_publish_batches,
+            get_async_provisioned_dependencies,
+        )
+
         publishers: list[ItemPublisher] = []
         items_with_context: list[tuple[str, Item, ItemPublisher]] = []
         skipped_items: list[str] = []
@@ -348,19 +357,61 @@ class ItemPublisher(Publisher):
             items_with_context.extend(publishable_items)
             publishers.append(publisher)
 
-        # Phase 2: Single bulk API call (publisher context used inside for per-item transforms)
+        # Phase 2: Batched bulk API calls (publisher context used inside for per-item transforms)
         if items_with_context:
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
 
-            item_count = len(items_with_context)
-            if item_count > constants.BULK_ITEM_COUNT_LIMIT:
-                msg = (
-                    f"Bulk publish item count ({item_count}) exceeds the API limit "
-                    f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
+            # Build dynamic variable dependencies; none yields a single batch
+            dependency_edges: list[tuple[str, str]] = []
+            async_source_map: dict[str, set[str]] = {}
+            if fabric_workspace_obj.contains_param_vars:
+                publish_item_keys = {f"{item.type}.{item_name}" for item_name, item, _publisher in items_with_context}
+                dependency_edges = build_dynamic_variable_dependency_graph(fabric_workspace_obj, publish_item_keys)
+                async_source_map = get_async_provisioned_dependencies(fabric_workspace_obj, publish_item_keys)
+
+            batches = compute_publish_batches(items_with_context, dependency_edges)
+
+            # Validate all batch sizes before publishing to prevent partial deployment
+            for batch_index, batch_items in enumerate(batches):
+                batch_count = len(batch_items)
+                if batch_count > constants.BULK_ITEM_COUNT_LIMIT:
+                    msg = (
+                        f"Bulk publish batch {batch_index + 1} item count ({batch_count}) exceeds the API limit "
+                        f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
+                    )
+                    raise InputError(msg, logger)
+
+            for batch_index, batch_items in enumerate(batches):
+                if len(batches) > 1:
+                    logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}")
+                    logger.debug(
+                        "Publishing batch %s items: %s",
+                        batch_index + 1,
+                        sorted(f"{item.type}: {name}" for name, item, _ in batch_items),
+                    )
+
+                fabric_workspace_obj._publish_items(
+                    batch_items, skipped_items=skipped_items if batch_index == 0 else None
                 )
-                raise InputError(msg, logger)
-            fabric_workspace_obj._publish_items(items_with_context, skipped_items=skipped_items)
+
+                # Refresh deployed items and invalidate cached $items.* values between batches
+                if batch_index < len(batches) - 1:
+                    # Wait for async attributes needed by later batches before refreshing
+                    provisioning_tasks = (
+                        (item, item_name, attribute_name)
+                        for item_name, item, _publisher in batch_items
+                        for attribute_name in sorted(async_source_map.get(f"{item.type}.{item_name}", ()))
+                    )
+                    for item, item_name, attribute_name in provisioning_tasks:
+                        fabric_workspace_obj._wait_for_item_attribute_provisioning(
+                            item.type, item.guid, item_name, attribute_name
+                        )
+
+                    fabric_workspace_obj._dynamic_var_cache = {
+                        k: v for k, v in fabric_workspace_obj._dynamic_var_cache.items() if k.startswith("$workspace.")
+                    }
+                    fabric_workspace_obj._refresh_deployed_items()
 
         # Phase 3: Post-hooks per type
         for publisher in publishers:

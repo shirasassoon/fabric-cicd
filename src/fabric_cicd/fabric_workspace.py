@@ -17,7 +17,7 @@ from azure.core.credentials import TokenCredential
 from fabric_cicd import constants
 from fabric_cicd._common._check_utils import check_regex, check_valid_json_content, check_valid_yaml_content
 from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError, ParameterFileError, ParsingError
-from fabric_cicd._common._fabric_endpoint import FabricEndpoint
+from fabric_cicd._common._fabric_endpoint import FabricEndpoint, handle_retry
 from fabric_cicd._common._item import Item
 from fabric_cicd._common._logging import log_header
 from fabric_cicd.constants import FeatureFlag, ItemType
@@ -143,6 +143,9 @@ class FabricWorkspace:
         self.deployed_items = {}
         self.contains_param_vars = False
         self.bulk_publish_enabled = False
+
+        # Cache for pre-resolved dynamic replacement variable values (used during bulk publish only)
+        self._dynamic_var_cache: dict[str, str] = {}
 
         # Initialize dataflow dependencies dictionary (used in dataflow item processing)
         self.dataflow_dependencies = {}
@@ -281,6 +284,59 @@ class FabricWorkspace:
         with self._item_attribute_cache_lock:
             self._item_attribute_cache[cache_key] = attribute_value
         return attribute_value
+
+    def _wait_for_item_attribute_provisioning(
+        self, item_type: str, item_guid: str, item_name: str, attribute_name: str
+    ) -> None:
+        """
+        Poll an item until an asynchronously provisioned attribute becomes available.
+
+        SQL endpoints (``sqlendpoint`` / ``sqlendpointid``) and the Eventhouse query URI
+        (``queryserviceuri``) are provisioned asynchronously after the item is created, so a
+        freshly deployed item may not expose them immediately. Serial publishing waits for this
+        via ``check_sqlendpoint_provision_status``; bulk (tiered) publishing calls this method
+        between tiers so a downstream tier does not resolve a dynamic variable to an empty value.
+
+        Args:
+            item_type: The item type.
+            item_guid: The deployed item ID.
+            item_name: The item display name.
+            attribute_name: The asynchronously provisioned attribute to wait for.
+        """
+        if not item_guid:
+            return
+
+        property_path = constants.PROPERTY_PATH_ATTR_MAPPING.get(item_type, {}).get(attribute_name)
+        if property_path is None:
+            return
+
+        item_url = f"{self.base_api_url}/{item_type.lower()}s/{item_guid}"
+        iteration = 1
+
+        while True:
+            response = self.endpoint.invoke(method="GET", url=item_url)
+
+            if dpath.get(response, property_path, default=""):
+                logger.debug(
+                    f"{constants.INDENT}Attribute '{attribute_name}' provisioned for {item_type} '{item_name}'"
+                )
+                return
+
+            # Terminal-failure detection where the API exposes a provisioning status (Lakehouse / Mirrored Database)
+            provisioning_status = dpath.get(
+                response, "body/properties/sqlEndpointProperties/provisioningStatus", default=None
+            )
+            if provisioning_status == "Failed":
+                msg = f"Cannot resolve '{attribute_name}' for {item_type} '{item_name}' (provisioning failed)"
+                raise FailedPublishedItemStatusError(msg, logger)
+
+            handle_retry(
+                attempt=iteration,
+                base_delay=5,
+                response_retry_after=30,
+                prepend_message=f"{constants.INDENT}Waiting for '{attribute_name}' provisioning on {item_type} '{item_name}'",
+            )
+            iteration += 1
 
     def _get_workspace_pools(self) -> list[dict]:
         """Return the list of workspace custom Spark pools, fetching from the API on first call.

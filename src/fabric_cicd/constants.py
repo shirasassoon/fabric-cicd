@@ -277,6 +277,9 @@ PROPERTY_PATH_ATTR_MAPPING = {
     },
 }
 
+# Attributes that require waits between publish tiers. Excludes immediately available "id".
+ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointid", "queryserviceuri"})
+
 # Parameter file configs
 PARAMETER_FILE_NAME = "parameter.yml"
 # Parameters to validate
