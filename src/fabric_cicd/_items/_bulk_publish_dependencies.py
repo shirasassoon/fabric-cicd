@@ -23,17 +23,15 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVariable"]:
-    """Parse a current-workspace $items.* variable, or return None."""
-    if not env_value.startswith("$"):
-        return None
+def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
+    """Return whether an $items.* variable is unfiltered and requires serial deployment."""
+    for param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
+        if parsed is None:
+            continue
+        if not any(param_dict.get(f) for f in ("item_type", "item_name", "file_path")):
+            return True
 
-    parsed = parse_dynamic_variable(env_value)
-
-    if parsed.kind == "item" and parsed.workspace_name is None:
-        return parsed
-
-    return None
+    return False
 
 
 def _iter_dynamic_replace_values(
@@ -51,15 +49,17 @@ def _iter_dynamic_replace_values(
                 yield param_dict, env_value, _parse_current_workspace_item(env_value)
 
 
-def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
-    """Return whether an $items.* variable is unfiltered and requires serial deployment."""
-    for param_dict, _env_value, parsed in _iter_dynamic_replace_values(workspace_obj):
-        if parsed is None:
-            continue
-        if not any(param_dict.get(f) for f in ("item_type", "item_name", "file_path")):
-            return True
+def _parse_current_workspace_item(env_value: str) -> Optional["ParsedDynamicVariable"]:
+    """Parse a current-workspace $items.* variable, or return None."""
+    if not env_value.startswith("$"):
+        return None
 
-    return False
+    parsed = parse_dynamic_variable(env_value)
+
+    if parsed.kind == "item" and parsed.workspace_name is None:
+        return parsed
+
+    return None
 
 
 def get_async_provisioned_dependencies(
