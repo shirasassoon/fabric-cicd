@@ -15,7 +15,7 @@ from fabric_cicd._parameter._utils import (
     process_environment_key,
     process_input_path,
 )
-from fabric_cicd.constants import ASYNC_PROVISIONED_ATTRIBUTES
+from fabric_cicd.constants import ASYNC_PROVISIONED_ATTRIBUTES, DEFAULT_GUID
 
 if TYPE_CHECKING:
     from fabric_cicd.fabric_workspace import FabricWorkspace
@@ -200,64 +200,169 @@ def _is_path_in_item(file_path: Path, item_path: Path) -> bool:
         return False
 
 
+def build_logical_reference_edges(
+    items_with_context: list[tuple[str, object, object]],
+) -> list[tuple[str, str]]:
+    """
+    Detect logical-ID references among the items being published.
+
+    Fabric items reference one another by the repository logicalId stored in their .platform
+    metadata. The bulk import API resolves these references only within a single request payload,
+    and the bulk publish path never rewrites logicalIds to deployed GUIDs. Two items linked by a
+    logical-ID reference must therefore be published in the same batch.
+
+    Returns:
+        A list of undirected co-location edges (item_key, item_key), each pair ordered and unique.
+        An empty list means no in-batch item references logical IDs of another published item.
+    """
+    # Map each publishable item's logical ID to its graph key
+    logical_id_to_key: dict[str, str] = {}
+    for item_name, item, _publisher in items_with_context:
+        logical_id = getattr(item, "logical_id", "") or ""
+        if logical_id and logical_id != DEFAULT_GUID:
+            logical_id_to_key[logical_id] = f"{item.type}.{item_name}"
+
+    # A reference requires at least two distinct logical IDs to relate
+    if len(logical_id_to_key) < 2:
+        return []
+
+    edges: list[tuple[str, str]] = []
+    seen_edges: set[tuple[str, str]] = set()
+    for item_name, item, _publisher in items_with_context:
+        key = f"{item.type}.{item_name}"
+        # Scan the item's text definition content for other items' logical IDs
+        content = "\n".join(
+            file.contents
+            for file in getattr(item, "item_files", [])
+            if getattr(file, "type", None) == "text" and isinstance(getattr(file, "contents", None), str)
+        )
+        if not content:
+            continue
+
+        for logical_id, referenced_key in logical_id_to_key.items():
+            if referenced_key == key:
+                continue
+            if logical_id in content:
+                edge = (key, referenced_key) if key < referenced_key else (referenced_key, key)
+                if edge not in seen_edges:
+                    seen_edges.add(edge)
+                    edges.append(edge)
+
+    return edges
+
+
 def compute_publish_batches(
     items_with_context: list[tuple[str, object, object]],
     dependency_edges: list[tuple[str, str]],
+    colocation_edges: list[tuple[str, str]] = (),
 ) -> list[list[tuple[str, object, object]]]:
     """
     Compute dependency tiers with Kahn's topological-sort algorithm.
 
-    Dependency-free items enter the first batch. No edges produce one batch.
+    Items connected by `colocation_edges` (logical-ID references) are contracted into a single
+    co-publish group that ships in one batch. Dependency (dynamic-variable) ordering is then
+    applied between groups: dependency-free groups enter the first batch. With no edges of either
+    kind the result is a single batch.
 
     Raises:
-        InputError: If dependencies contain a cycle.
+        InputError: If dependencies contain a cycle, or a dynamic-variable dependency exists
+            between two items forced into the same batch by a logical-ID reference.
     """
-    if not dependency_edges:
+    if not dependency_edges and not colocation_edges:
         return [items_with_context]
 
     # Preserve edge order while deduplicating
     dependency_edges = list(dict.fromkeys(dependency_edges))
 
-    # Index publish contexts by graph key
+    # Index publish contexts by graph key, preserving input order
     item_key_to_context: dict[str, tuple[str, object, object]] = {}
+    ordered_keys: list[str] = []
     for item_name, item, publisher in items_with_context:
         key = f"{item.type}.{item_name}"
         item_key_to_context[key] = (item_name, item, publisher)
+        ordered_keys.append(key)
+    key_index = {key: index for index, key in enumerate(ordered_keys)}
+    publish_item_keys = set(item_key_to_context)
 
-    publish_item_keys = set(item_key_to_context.keys())
-    in_degree: dict[str, int] = {k: 0 for k in publish_item_keys}
-    dependents: dict[str, list[str]] = {k: [] for k in publish_item_keys}
+    # Union-Find to contract co-located items into groups that must publish together
+    parent = {key: key for key in ordered_keys}
 
-    # Build in-degrees and reverse edges for Kahn's algorithm
+    def find(node: str) -> str:
+        root = node
+        while parent[root] != root:
+            root = parent[root]
+        while parent[node] != root:
+            parent[node], node = root, parent[node]
+        return root
+
+    def union(node_a: str, node_b: str) -> None:
+        root_a, root_b = find(node_a), find(node_b)
+        if root_a == root_b:
+            return
+        # Keep the member appearing first in input order as the representative for determinism
+        if key_index[root_a] <= key_index[root_b]:
+            parent[root_b] = root_a
+        else:
+            parent[root_a] = root_b
+
+    for node_a, node_b in colocation_edges:
+        if node_a in publish_item_keys and node_b in publish_item_keys:
+            union(node_a, node_b)
+
+    # Group members by representative, preserving input order within each group
+    groups: dict[str, list[str]] = {}
+    for key in ordered_keys:
+        groups.setdefault(find(key), []).append(key)
+
+    # Lift dependency edges to the group level for Kahn's algorithm
+    in_degree: dict[str, int] = {rep: 0 for rep in groups}
+    dependents: dict[str, list[str]] = {rep: [] for rep in groups}
+    seen_group_edges: set[tuple[str, str]] = set()
     for referencing, referenced in dependency_edges:
-        if referencing in publish_item_keys and referenced in publish_item_keys:
-            in_degree[referencing] = in_degree.get(referencing, 0) + 1
-            dependents.setdefault(referenced, []).append(referencing)
+        if referencing not in publish_item_keys or referenced not in publish_item_keys:
+            continue
+        group_referencing, group_referenced = find(referencing), find(referenced)
+        if group_referencing == group_referenced:
+            # A dynamic-variable dependency between two items that a logical-ID reference forces
+            # into the same batch cannot be satisfied: one must publish before the other, yet they
+            # must ship together. Standard (serial) deployment resolves both reference kinds.
+            conflict = ", ".join(sorted(groups[group_referencing]))
+            msg = (
+                f"Cannot satisfy bulk publish ordering for items linked by a logical-ID reference "
+                f"({conflict}): they must publish together, but a dynamic variable also requires "
+                f"one to publish before another. Deploy without bulk publish to resolve this."
+            )
+            raise InputError(msg, logger)
+        edge = (group_referencing, group_referenced)
+        if edge not in seen_group_edges:
+            seen_group_edges.add(edge)
+            in_degree[group_referencing] += 1
+            dependents[group_referenced].append(group_referencing)
 
     batches: list[list[tuple[str, object, object]]] = []
-    current_batch_keys = [k for k, deg in in_degree.items() if deg == 0]
+    current_reps = sorted((rep for rep, deg in in_degree.items() if deg == 0), key=lambda rep: key_index[rep])
 
-    # Publish each dependency-free tier as one batch
-    processed = set()
-    while current_batch_keys:
+    # Publish each dependency-free tier of groups as one batch
+    processed: set[str] = set()
+    while current_reps:
         batch = []
-        next_batch_keys = []
-        for key in current_batch_keys:
-            if key in item_key_to_context:
-                batch.append(item_key_to_context[key])
-            processed.add(key)
-            for dependent in dependents.get(key, []):
+        next_reps = []
+        for rep in current_reps:
+            processed.add(rep)
+            for member in groups[rep]:
+                batch.append(item_key_to_context[member])
+            for dependent in dependents[rep]:
                 in_degree[dependent] -= 1
                 if in_degree[dependent] == 0:
-                    next_batch_keys.append(dependent)
+                    next_reps.append(dependent)
 
         if batch:
             batches.append(batch)
-        current_batch_keys = next_batch_keys
+        current_reps = sorted(next_reps, key=lambda rep: key_index[rep])
 
-    # Unprocessed items belong to a dependency cycle
-    if len(processed) < len(publish_item_keys):
-        cycle_keys = sorted(publish_item_keys - processed)
+    # Unprocessed groups belong to a dependency cycle
+    if len(processed) < len(groups):
+        cycle_keys = sorted(member for rep in (set(groups) - processed) for member in groups[rep])
         msg = f"Circular dynamic variable dependency detected among: {', '.join(cycle_keys)}"
         raise InputError(msg, logger)
 

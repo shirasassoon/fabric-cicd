@@ -322,6 +322,7 @@ class ItemPublisher(Publisher):
         """
         from fabric_cicd._items._bulk_publish_dependencies import (
             build_dynamic_variable_dependency_graph,
+            build_logical_reference_edges,
             compute_publish_batches,
             get_async_provisioned_dependencies,
         )
@@ -364,13 +365,17 @@ class ItemPublisher(Publisher):
 
             # Build dynamic variable dependencies; none yields a single batch
             dependency_edges: list[tuple[str, str]] = []
+            colocation_edges: list[tuple[str, str]] = []
             async_source_map: dict[str, set[str]] = {}
             if fabric_workspace_obj.contains_param_vars:
                 publish_item_keys = {f"{item.type}.{item_name}" for item_name, item, _publisher in items_with_context}
                 dependency_edges = build_dynamic_variable_dependency_graph(fabric_workspace_obj, publish_item_keys)
                 async_source_map = get_async_provisioned_dependencies(fabric_workspace_obj, publish_item_keys)
+                # Logical-ID references only matter once ordering splits items across tiers
+                if dependency_edges:
+                    colocation_edges = build_logical_reference_edges(items_with_context)
 
-            batches = compute_publish_batches(items_with_context, dependency_edges)
+            batches = compute_publish_batches(items_with_context, dependency_edges, colocation_edges)
 
             # Validate all batch sizes before publishing to prevent partial deployment
             for batch_index, batch_items in enumerate(batches):

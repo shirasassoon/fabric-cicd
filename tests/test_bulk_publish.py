@@ -20,6 +20,7 @@ from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, Inpu
 from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd._items._bulk_publish_dependencies import (
     build_dynamic_variable_dependency_graph,
+    build_logical_reference_edges,
     compute_publish_batches,
     get_async_provisioned_dependencies,
     has_unfiltered_items_variable,
@@ -1057,6 +1058,65 @@ class TestComputePublishBatches:
         edges = [("Notebook.A", "Lakehouse.B"), ("Lakehouse.B", "Notebook.A")]
         with pytest.raises(InputError, match="Circular dynamic variable dependency"):
             compute_publish_batches(items, edges)
+
+    def test_colocated_items_share_batch_with_dependency_tier(self):
+        # Lakehouse.LH is referenced by a dynamic variable in Notebook.NB (LH must precede NB).
+        # DataPipeline.PL references Notebook.NB by logical ID, so PL must ship with NB.
+        items = [_batch_ctx("Lakehouse.LH"), _batch_ctx("Notebook.NB"), _batch_ctx("DataPipeline.PL")]
+        dependency_edges = [("Notebook.NB", "Lakehouse.LH")]
+        colocation_edges = [("DataPipeline.PL", "Notebook.NB")]
+        result = _batch_keys(compute_publish_batches(items, dependency_edges, colocation_edges))
+        assert result == [{"Lakehouse.LH"}, {"Notebook.NB", "DataPipeline.PL"}]
+
+    def test_colocation_only_yields_single_batch(self):
+        items = [_batch_ctx("Notebook.NB"), _batch_ctx("DataPipeline.PL")]
+        colocation_edges = [("DataPipeline.PL", "Notebook.NB")]
+        result = _batch_keys(compute_publish_batches(items, [], colocation_edges))
+        assert result == [{"Notebook.NB", "DataPipeline.PL"}]
+
+    def test_dependency_within_colocation_group_raises(self):
+        # A dynamic-variable ordering edge between two co-located items is unsatisfiable in bulk.
+        items = [_batch_ctx("Lakehouse.LH"), _batch_ctx("Notebook.NB")]
+        dependency_edges = [("Notebook.NB", "Lakehouse.LH")]
+        colocation_edges = [("Notebook.NB", "Lakehouse.LH")]
+        with pytest.raises(InputError, match="logical-ID reference"):
+            compute_publish_batches(items, dependency_edges, colocation_edges)
+
+
+def _logical_ctx(key, logical_id, contents=""):
+    """Build an (item_name, item, publisher) tuple with a logical ID and one text file."""
+    item_type, item_name = key.split(".", 1)
+    text_file = SimpleNamespace(type="text", contents=contents)
+    item = SimpleNamespace(type=item_type, logical_id=logical_id, item_files=[text_file])
+    return (item_name, item, object())
+
+
+class TestBuildLogicalReferenceEdges:
+    """Tests for build_logical_reference_edges."""
+
+    def test_no_references_returns_empty(self):
+        items = [
+            _logical_ctx("Notebook.A", "11111111-1111-1111-1111-111111111111", contents="no refs here"),
+            _logical_ctx("Lakehouse.B", "22222222-2222-2222-2222-222222222222", contents="also nothing"),
+        ]
+        assert build_logical_reference_edges(items) == []
+
+    def test_reference_detected_as_undirected_edge(self):
+        pipeline_content = "referenced by 22222222-2222-2222-2222-222222222222 here"
+        items = [
+            _logical_ctx("Notebook.A", "11111111-1111-1111-1111-111111111111", contents="standalone"),
+            _logical_ctx("Lakehouse.B", "22222222-2222-2222-2222-222222222222", contents="lakehouse body"),
+            _logical_ctx("DataPipeline.C", "33333333-3333-3333-3333-333333333333", contents=pipeline_content),
+        ]
+        edges = build_logical_reference_edges(items)
+        assert edges == [("DataPipeline.C", "Lakehouse.B")]
+
+    def test_default_and_missing_logical_ids_ignored(self):
+        items = [
+            _logical_ctx("Notebook.A", constants.DEFAULT_GUID, contents="00000000-0000-0000-0000-000000000000"),
+            _logical_ctx("Lakehouse.B", "", contents="nothing"),
+        ]
+        assert build_logical_reference_edges(items) == []
 
 
 # =============================================================================
