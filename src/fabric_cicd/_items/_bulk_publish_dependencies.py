@@ -204,16 +204,10 @@ def build_logical_reference_edges(
     items_with_context: list[tuple[str, object, object]],
 ) -> list[tuple[str, str]]:
     """
-    Detect logical-ID references among the items being published.
-
-    Fabric items reference one another by the repository logicalId stored in their .platform
-    metadata. The bulk import API resolves these references only within a single request payload,
-    and the bulk publish path never rewrites logicalIds to deployed GUIDs. Two items linked by a
-    logical-ID reference must therefore be published in the same batch.
+    Find logical-ID references that require items to publish in the same bulk request.
 
     Returns:
-        A list of undirected co-location edges (item_key, item_key), each pair ordered and unique.
-        An empty list means no in-batch item references logical IDs of another published item.
+        Ordered, unique co-location edges between published items.
     """
     # Map each publishable item's logical ID to its graph key
     logical_id_to_key: dict[str, str] = {}
@@ -226,8 +220,7 @@ def build_logical_reference_edges(
     if len(logical_id_to_key) < 2:
         return []
 
-    edges: list[tuple[str, str]] = []
-    seen_edges: set[tuple[str, str]] = set()
+    edges: dict[tuple[str, str], None] = {}
     for item_name, item, _publisher in items_with_context:
         key = f"{item.type}.{item_name}"
         # Scan the item's text definition content for other items' logical IDs
@@ -240,15 +233,11 @@ def build_logical_reference_edges(
             continue
 
         for logical_id, referenced_key in logical_id_to_key.items():
-            if referenced_key == key:
-                continue
-            if logical_id in content:
+            if referenced_key != key and logical_id in content:
                 edge = (key, referenced_key) if key < referenced_key else (referenced_key, key)
-                if edge not in seen_edges:
-                    seen_edges.add(edge)
-                    edges.append(edge)
+                edges.setdefault(edge, None)
 
-    return edges
+    return list(edges)
 
 
 def compute_publish_batches(
@@ -268,26 +257,29 @@ def compute_publish_batches(
         InputError: If dependencies contain a cycle, or a dynamic-variable dependency exists
             between two items forced into the same batch by a logical-ID reference.
     """
+    # Return a single batch if there are no dependency or colocation edges to consider
     if not dependency_edges and not colocation_edges:
         return [items_with_context]
 
-    # Preserve edge order while deduplicating
-    dependency_edges = list(dict.fromkeys(dependency_edges))
-
-    # Index publish contexts by graph key, preserving input order
     item_key_to_context: dict[str, tuple[str, object, object]] = {}
     ordered_keys: list[str] = []
+
     for item_name, item, publisher in items_with_context:
         key = f"{item.type}.{item_name}"
+        # Keep the publish data accessible after the graph is reduced to string keys
         item_key_to_context[key] = (item_name, item, publisher)
+        # Preserve input order so items and batches are returned deterministically
         ordered_keys.append(key)
+    # Store each key's input position so groups and batches can be sorted in the same order
     key_index = {key: index for index, key in enumerate(ordered_keys)}
+    # Use a set to quickly skip edges that include an item not being published
     publish_item_keys = set(item_key_to_context)
 
     # Union-Find to contract co-located items into groups that must publish together
     parent = {key: key for key in ordered_keys}
 
     def find(node: str) -> str:
+        # Resolve the co-location group and compress its path to speed up later lookups
         root = node
         while parent[root] != root:
             root = parent[root]
@@ -296,20 +288,21 @@ def compute_publish_batches(
         return root
 
     def union(node_a: str, node_b: str) -> None:
+        # Merge co-location groups under the earliest item to keep batch order deterministic
         root_a, root_b = find(node_a), find(node_b)
         if root_a == root_b:
             return
-        # Keep the member appearing first in input order as the representative for determinism
         if key_index[root_a] <= key_index[root_b]:
             parent[root_b] = root_a
         else:
             parent[root_a] = root_b
 
     for node_a, node_b in colocation_edges:
+        # Merge the groups only when both items are being published
         if node_a in publish_item_keys and node_b in publish_item_keys:
             union(node_a, node_b)
 
-    # Group members by representative, preserving input order within each group
+    # Collect items with the same root key into one publish group, preserving input order
     groups: dict[str, list[str]] = {}
     for key in ordered_keys:
         groups.setdefault(find(key), []).append(key)
@@ -322,17 +315,15 @@ def compute_publish_batches(
         if referencing not in publish_item_keys or referenced not in publish_item_keys:
             continue
         group_referencing, group_referenced = find(referencing), find(referenced)
+        # Raise an error if a dependency exists within the same group, as it conflicts with co-location
         if group_referencing == group_referenced:
-            # A dynamic-variable dependency between two items that a logical-ID reference forces
-            # into the same batch cannot be satisfied: one must publish before the other, yet they
-            # must ship together. Standard (serial) deployment resolves both reference kinds.
             conflict = ", ".join(sorted(groups[group_referencing]))
             msg = (
-                f"Cannot satisfy bulk publish ordering for items linked by a logical-ID reference "
-                f"({conflict}): they must publish together, but a dynamic variable also requires "
-                f"one to publish before another. Deploy without bulk publish to resolve this."
+                f"Cannot bulk publish {conflict}: a logical-ID reference requires the items in one batch, "
+                f"but a dynamic variable requires separate batches. Use serial publishing instead."
             )
             raise InputError(msg, logger)
+        # Otherwise, record the edge between groups for topological sorting
         edge = (group_referencing, group_referenced)
         if edge not in seen_group_edges:
             seen_group_edges.add(edge)
@@ -356,8 +347,7 @@ def compute_publish_batches(
                 if in_degree[dependent] == 0:
                     next_reps.append(dependent)
 
-        if batch:
-            batches.append(batch)
+        batches.append(batch)
         current_reps = sorted(next_reps, key=lambda rep: key_index[rep])
 
     # Unprocessed groups belong to a dependency cycle
