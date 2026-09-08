@@ -141,7 +141,7 @@ class FabricWorkspace:
         self.repository_items = {}
         self.deployed_folders = {}
         self.deployed_items = {}
-        self.contains_param_vars = False
+        self.contains_param_item_vars = False
         self.bulk_publish_enabled = False
 
         # Cache for pre-resolved dynamic replacement variable values (used during bulk publish only)
@@ -381,7 +381,9 @@ class FabricWorkspace:
         is_valid = parameter_obj._validate_parameter_file()
         if is_valid:
             self.environment_parameter = parameter_obj.environment_parameter
-            self.contains_param_vars = bool(parameter_obj._search_dynamic_replacement_variables_in_parameter_file())
+            self.contains_param_item_vars = bool(
+                parameter_obj._search_dynamic_replacement_item_variables_in_parameter_file()
+            )
         else:
             msg = "Deployment terminated due to an invalid parameter file"
             raise ParameterFileError(msg, logger)
@@ -517,7 +519,7 @@ class FabricWorkspace:
                 self.workspace_items[item_type] = {}
 
             # Only collect attribute values when parameterization with dynamic replacement variables is in use
-            if self.contains_param_vars:
+            if self.contains_param_item_vars:
                 # Get additional properties - eagerly fetch attribute values for specific item types
                 if item_type in [
                     ItemType.LAKEHOUSE.value,

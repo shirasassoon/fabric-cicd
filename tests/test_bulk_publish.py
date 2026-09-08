@@ -266,23 +266,34 @@ class TestBulkPublishFallback:
         ):
             publish.publish_all_items(workspace)
             assert workspace.bulk_publish_enabled is False
-            assert workspace.contains_param_vars is True
+            assert workspace.contains_param_item_vars is True
 
     @pytest.mark.parametrize(
-        "param_yaml",
+        ("param_yaml", "contains_item_var"),
         [
             # Filtered current-workspace $items.* -> supported via tiered publishing
-            'find_replace:\n  - find_value: "some-id"\n    item_type: "Notebook"\n    replace_value:\n      PPE: "$items.Notebook.TestNotebook.$id"\n',
+            (
+                'find_replace:\n  - find_value: "some-id"\n    item_type: "Notebook"\n    replace_value:\n      PPE: "$items.Notebook.TestNotebook.$id"\n',
+                True,
+            ),
             # $workspace.* -> resolved upfront, no dependency
-            'find_replace:\n  - find_value: "some-id"\n    replace_value:\n      PPE: "$workspace.$id"\n',
+            ('find_replace:\n  - find_value: "some-id"\n    replace_value:\n      PPE: "$workspace.$id"\n', False),
             # Cross-workspace item variable -> targets another workspace, resolved upfront
-            'find_replace:\n  - find_value: "some-id"\n    replace_value:\n      PPE: "$workspace.other_ws.$items.Notebook.some_item.$id"\n',
+            (
+                'find_replace:\n  - find_value: "some-id"\n    replace_value:\n      PPE: "$workspace.other_ws.$items.Notebook.some_item.$id"\n',
+                False,
+            ),
             # Dynamic find_value -> resolved upfront, does not gate bulk
-            'find_replace:\n  - find_value: "$workspace.source_ws.$items.Notebook.some_lakehouse.$id"\n    replace_value:\n      PPE: "replacement-id"\n',
+            (
+                'find_replace:\n  - find_value: "$workspace.source_ws.$items.Notebook.some_lakehouse.$id"\n    replace_value:\n      PPE: "replacement-id"\n',
+                False,
+            ),
         ],
         ids=["filtered_items", "workspace_var", "cross_workspace_item", "dynamic_find_value"],
     )
-    def test_no_fallback_on_supported_dynamic_variables(self, mock_endpoint, temp_workspace_dir, param_yaml):
+    def test_no_fallback_on_supported_dynamic_variables(
+        self, mock_endpoint, temp_workspace_dir, param_yaml, contains_item_var
+    ):
         """Bulk stays enabled for $workspace.*, cross-workspace, dynamic find_value, and filtered $items.* vars."""
         create_test_item_dir(temp_workspace_dir, None, "TestNotebook", "Notebook", "nb-id-001")
         create_parameter_file(temp_workspace_dir, param_yaml)
@@ -293,7 +304,7 @@ class TestBulkPublishFallback:
         ):
             publish.publish_all_items(workspace)
             assert workspace.bulk_publish_enabled is True
-            assert workspace.contains_param_vars is True
+            assert workspace.contains_param_item_vars is contains_item_var
 
     def test_no_fallback_without_dynamic_variables(self, mock_endpoint, temp_workspace_dir):
         """Bulk publish remains enabled when parameter file has no dynamic replacement variables."""
@@ -314,7 +325,7 @@ find_replace:
         ):
             publish.publish_all_items(workspace)
             assert workspace.bulk_publish_enabled is True
-            assert workspace.contains_param_vars is False
+            assert workspace.contains_param_item_vars is False
 
     def test_item_name_exclude_regex_supported_in_bulk(self, mock_endpoint, temp_workspace_dir, caplog):
         """item_name_exclude_regex does not cause fallback -- filtering is applied in bulk Phase 1."""
@@ -1140,7 +1151,7 @@ class TestBulkPublishTieredExecution:
         publisher.has_async_publish_check = False
 
         ws = MagicMock()
-        ws.contains_param_vars = False  # skip graph build; batches are injected below
+        ws.contains_param_item_vars = False  # skip graph build; batches are injected below
         ws._apply_publish_filters.return_value = False
         ws._dynamic_var_cache = {"$workspace.$id": "wsid", "$items.Notebook.base.$id": "stale"}
         return ws, publisher, base, dep
@@ -1218,7 +1229,7 @@ class TestBulkPublishTieredExecution:
         publisher.has_async_publish_check = False
 
         ws = MagicMock()
-        ws.contains_param_vars = True
+        ws.contains_param_item_vars = True
         ws._apply_publish_filters.return_value = False
         ws._dynamic_var_cache = {}
 

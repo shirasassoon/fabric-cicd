@@ -228,7 +228,7 @@ def publish_all_items(
         # when an $items.* replace_value has no file filter — dependency scope cannot be narrowed, so fall back to standard deployment in that case only
         if (
             not unsupported
-            and fabric_workspace_obj.contains_param_vars
+            and fabric_workspace_obj.contains_param_item_vars
             and has_unfiltered_items_variable(fabric_workspace_obj)
         ):
             reasons.append(
