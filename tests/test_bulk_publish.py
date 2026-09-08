@@ -1122,6 +1122,22 @@ class TestBuildLogicalReferenceEdges:
         edges = build_logical_reference_edges(items)
         assert edges == [("DataPipeline.C", "Lakehouse.B")]
 
+    def test_multiple_references_are_detected_once(self):
+        pipeline_content = (
+            "refs 11111111-1111-1111-1111-111111111111 and 22222222-2222-2222-2222-222222222222 "
+            "and duplicate 22222222-2222-2222-2222-222222222222"
+        )
+        items = [
+            _logical_ctx("Notebook.A", "11111111-1111-1111-1111-111111111111", contents="standalone"),
+            _logical_ctx("Lakehouse.B", "22222222-2222-2222-2222-222222222222", contents="standalone"),
+            _logical_ctx("DataPipeline.C", "33333333-3333-3333-3333-333333333333", contents=pipeline_content),
+        ]
+
+        assert build_logical_reference_edges(items) == [
+            ("DataPipeline.C", "Lakehouse.B"),
+            ("DataPipeline.C", "Notebook.A"),
+        ]
+
     def test_default_and_missing_logical_ids_ignored(self):
         items = [
             _logical_ctx("Notebook.A", constants.DEFAULT_GUID, contents="00000000-0000-0000-0000-000000000000"),

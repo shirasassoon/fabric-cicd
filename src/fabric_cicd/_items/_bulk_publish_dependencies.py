@@ -4,6 +4,7 @@
 """Dependency graph helpers for batched bulk item publishing."""
 
 import logging
+import re
 from collections.abc import Iterator
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
@@ -21,6 +22,8 @@ if TYPE_CHECKING:
     from fabric_cicd.fabric_workspace import FabricWorkspace
 
 logger = logging.getLogger(__name__)
+
+_GUID_REFERENCE_PATTERN = re.compile(r"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}")
 
 
 def has_unfiltered_items_variable(workspace_obj: "FabricWorkspace") -> bool:
@@ -214,30 +217,27 @@ def build_logical_reference_edges(
     for item_name, item, _publisher in items_with_context:
         logical_id = getattr(item, "logical_id", "") or ""
         if logical_id and logical_id != DEFAULT_GUID:
-            logical_id_to_key[logical_id] = f"{item.type}.{item_name}"
+            logical_id_to_key[logical_id.lower()] = f"{item.type}.{item_name}"
 
     # A reference requires at least two distinct logical IDs to relate
     if len(logical_id_to_key) < 2:
         return []
 
-    edges: dict[tuple[str, str], None] = {}
+    edges: set[tuple[str, str]] = set()
     for item_name, item, _publisher in items_with_context:
         key = f"{item.type}.{item_name}"
-        # Scan the item's text definition content for other items' logical IDs
-        content = "\n".join(
-            file.contents
-            for file in getattr(item, "item_files", [])
-            if getattr(file, "type", None) == "text" and isinstance(getattr(file, "contents", None), str)
-        )
-        if not content:
-            continue
+        for file in getattr(item, "item_files", []):
+            content = getattr(file, "contents", None)
+            if getattr(file, "type", None) != "text" or not isinstance(content, str):
+                continue
 
-        for logical_id, referenced_key in logical_id_to_key.items():
-            if referenced_key != key and logical_id in content:
-                edge = (key, referenced_key) if key < referenced_key else (referenced_key, key)
-                edges.setdefault(edge, None)
+            for match in _GUID_REFERENCE_PATTERN.finditer(content):
+                referenced_key = logical_id_to_key.get(match.group(0).lower())
+                if referenced_key is not None and referenced_key != key:
+                    edge = (key, referenced_key) if key < referenced_key else (referenced_key, key)
+                    edges.add(edge)
 
-    return list(edges)
+    return sorted(edges)
 
 
 def compute_publish_batches(
