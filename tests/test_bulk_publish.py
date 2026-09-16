@@ -5,6 +5,7 @@
 
 import base64
 import json
+import re
 import tempfile
 from contextlib import contextmanager
 from pathlib import Path
@@ -1134,7 +1135,7 @@ class TestBulkPublishDependencyGraph:
 
         with pytest.raises(
             InputError,
-            match="referenced item 'Lakehouse.LH' is excluded from this deployment and does not exist",
+            match=re.escape("referenced item 'Lakehouse.LH' is excluded from this deployment and does not exist"),
         ):
             build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL"})
 
