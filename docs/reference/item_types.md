@@ -85,6 +85,13 @@
     - Destinations connected to items within the same workspace are re-pointed to the new item in the target workspace.
 - **Initial deployment** requires waiting for the table to populate in the destination lakehouse if a lakehouse destination is present in the eventstream.
 
+## Graph Model
+
+- **Parameterization:**
+    - Data sources (e.g., Lakehouse) and their workspace references do not use _logical ID_ or _default workspace ID_ and will always point to the original item unless parameterized in the `find_replace` section of the `parameter.yml` file.
+    - It is recommended to use the supported variables in `find_replace` for dynamic replacement of the source workspace and item IDs.
+- Currently, only **standalone** Graph Models sourcing from a **Lakehouse** are supported. Graph Models authored by an Ontology item are not source controlled and are not deployed as standalone items.
+
 ## KQL Database
 
 - **Parameterization:**
