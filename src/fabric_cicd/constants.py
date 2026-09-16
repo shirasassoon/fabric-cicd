@@ -243,6 +243,11 @@ API_FORMAT_MAPPING = {
 
 # REGEX Constants
 WORKSPACE_ID_REFERENCE_REGEX = r"\"?(default_lakehouse_workspace_id|workspaceId|workspace)\"?\s*[:=]\s*\"(.*?)\""
+REFLEX_WORKSPACE_ID_REFERENCE_REGEX = (
+    r'(\\"name\\":\\"workspaceId\\",\\"type\\":\\"string\\",\\"value\\":\\")'
+    rf"{DEFAULT_GUID}"
+    r'(\\")'
+)
 DATAFLOW_SOURCE_REGEX = (
     r'(PowerPlatform\.Dataflows)(?:\(\[\]\))?[\s\S]*?workspaceId\s*=\s*"(.*?)"[\s\S]*?dataflowId\s*=\s*"(.*?)"'
 )
@@ -277,6 +282,9 @@ PROPERTY_PATH_ATTR_MAPPING = {
     },
 }
 
+# Attributes that require waits between publish tiers. Excludes immediately available "id".
+ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointid", "queryserviceuri"})
+
 # Parameter file configs
 PARAMETER_FILE_NAME = "parameter.yml"
 # Parameters to validate
@@ -293,6 +301,7 @@ WORKSPACE_VARIABLE_ATTRIBUTES = {
     "$workspace.$name_encoded": "name_encoded",
 }
 WORKSPACE_VARIABLES_FIXED = list(WORKSPACE_VARIABLE_ATTRIBUTES)
+PARAMETER_FILE_FILTERS = ("item_type", "item_name", "file_path")
 
 # Parameter file validation messages
 INVALID_REPLACE_VALUE_SPARK_POOL = {
