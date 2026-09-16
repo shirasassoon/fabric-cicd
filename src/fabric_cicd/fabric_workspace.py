@@ -291,11 +291,11 @@ class FabricWorkspace:
         """
         Poll an item until an asynchronously provisioned attribute becomes available.
 
-        SQL endpoints (``sqlendpoint`` / ``sqlendpointid``) and the Eventhouse query URI
-        (``queryserviceuri``) are provisioned asynchronously after the item is created, so a
+        SQL endpoints (`sqlendpoint` / `sqlendpointid`) and the Eventhouse query URI
+        (`queryserviceuri`) are provisioned asynchronously after the item is created, so a
         freshly deployed item may not expose them immediately. Serial publishing waits for this
-        via ``check_sqlendpoint_provision_status``; bulk (tiered) publishing calls this method
-        between tiers so a downstream tier does not resolve a dynamic variable to an empty value.
+        via `check_sqlendpoint_provision_status`; staged bulk publishing calls this method
+        between stages so a downstream stage does not resolve a dynamic variable to an empty value.
 
         Args:
             item_type: The item type.

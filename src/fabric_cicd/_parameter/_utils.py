@@ -935,18 +935,18 @@ def _resolve_file_path(
     Returns the resolved absolute path if valid, None otherwise.
     """
     try:
+        resolved_repository_directory = repository_directory.resolve()
+
         # Step 1: Resolve the input path based on its type
         if path_type == "Relative":
-            resolved_path = (repository_directory / input_path).resolve()
+            resolved_path = (resolved_repository_directory / input_path).resolve()
             logger.debug(f"{path_type} path '{input_path}' resolved as '{resolved_path}'")
-        elif path_type == "Absolute":
-            resolved_path = input_path.resolve()
         else:
-            resolved_path = input_path
+            resolved_path = input_path.resolve()
 
         # Step 2: Check if the path is within the repository directory
         try:
-            _ = resolved_path.relative_to(repository_directory)
+            _ = resolved_path.relative_to(resolved_repository_directory)
         except ValueError:
             log_func(f"{path_type} path '{input_path}' is outside the repository directory")
             return None

@@ -301,6 +301,7 @@ WORKSPACE_VARIABLE_ATTRIBUTES = {
     "$workspace.$name_encoded": "name_encoded",
 }
 WORKSPACE_VARIABLES_FIXED = list(WORKSPACE_VARIABLE_ATTRIBUTES)
+PARAMETER_FILE_FILTERS = ("item_type", "item_name", "file_path")
 
 # Parameter file validation messages
 INVALID_REPLACE_VALUE_SPARK_POOL = {

@@ -19,10 +19,11 @@ from fabric_cicd import constants
 from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError
 from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd._items._bulk_publish_dependencies import (
+    _get_referencing_item_keys,
     build_dynamic_variable_dependency_graph,
-    build_logical_reference_edges,
+    build_logical_id_links,
     compute_publish_batches,
-    get_async_provisioned_dependencies,
+    get_async_attributes_to_wait_for,
     has_unfiltered_items_variable,
 )
 from fabric_cicd.constants import FeatureFlag, ItemType
@@ -271,7 +272,7 @@ class TestBulkPublishFallback:
     @pytest.mark.parametrize(
         ("param_yaml", "contains_item_var"),
         [
-            # Filtered current-workspace $items.* -> supported via tiered publishing
+            # Filtered current-workspace $items.* -> supported via staged publishing
             (
                 'find_replace:\n  - find_value: "some-id"\n    item_type: "Notebook"\n    replace_value:\n      PPE: "$items.Notebook.TestNotebook.$id"\n',
                 True,
@@ -943,12 +944,153 @@ def _graph_workspace(environment_parameter, deployed_items, repository_items):
         environment_parameter=environment_parameter,
         deployed_items=deployed_items,
         repository_items=repository_items,
-        repository_directory=None,
+        repository_directory=Path(),
     )
 
 
-def _repo_item():
-    return SimpleNamespace(path=None)
+def _repo_item(path=None):
+    return SimpleNamespace(path=path)
+
+
+class TestGetReferencingItemKeys:
+    """Tests for matching repository items against parameter filters."""
+
+    def test_no_filters_returns_all_items(self):
+        repo = {
+            "Notebook": {"Shared": _repo_item(), "NotebookOnly": _repo_item()},
+            "DataPipeline": {"Shared": _repo_item()},
+        }
+
+        assert _get_referencing_item_keys({}, repo, Path()) == [
+            "Notebook.Shared",
+            "Notebook.NotebookOnly",
+            "DataPipeline.Shared",
+        ]
+
+    def test_list_filters_match_any_value_in_each_filter(self):
+        repo = {
+            "Notebook": {"Shared": _repo_item(), "NotebookOnly": _repo_item()},
+            "DataPipeline": {"Shared": _repo_item(), "PipelineOnly": _repo_item()},
+            "Lakehouse": {"Shared": _repo_item()},
+        }
+        filters = {
+            "item_type": ["Notebook", "DataPipeline"],
+            "item_name": ["Shared", "PipelineOnly"],
+        }
+
+        assert _get_referencing_item_keys(filters, repo, Path()) == [
+            "Notebook.Shared",
+            "DataPipeline.Shared",
+            "DataPipeline.PipelineOnly",
+        ]
+
+    def test_name_filter_matches_same_name_across_types(self):
+        repo = {
+            "Notebook": {"Shared": _repo_item()},
+            "DataPipeline": {"Shared": _repo_item()},
+        }
+
+        assert _get_referencing_item_keys({"item_name": "Shared"}, repo, Path()) == [
+            "Notebook.Shared",
+            "DataPipeline.Shared",
+        ]
+
+    def test_path_filter_returns_containing_item(self, tmp_path):
+        notebook_path = tmp_path / "Shared.Notebook"
+        pipeline_path = tmp_path / "Load.DataPipeline"
+        notebook_path.mkdir()
+        pipeline_path.mkdir()
+        (notebook_path / "content.py").write_text("", encoding="utf-8")
+        (pipeline_path / "content.json").write_text("{}", encoding="utf-8")
+        repo = {
+            "Notebook": {"Shared": _repo_item(notebook_path)},
+            "DataPipeline": {"Load": _repo_item(pipeline_path)},
+        }
+
+        result = _get_referencing_item_keys({"file_path": "Shared.Notebook/content.py"}, repo, tmp_path.resolve(), {})
+
+        assert result == ["Notebook.Shared"]
+
+    def test_all_filters_must_match_same_item(self, tmp_path):
+        shared_path = tmp_path / "Shared.Notebook"
+        other_path = tmp_path / "Other.Notebook"
+        shared_path.mkdir()
+        other_path.mkdir()
+        (shared_path / "content.py").write_text("", encoding="utf-8")
+        repo = {
+            "Notebook": {
+                "Shared": _repo_item(shared_path),
+                "Other": _repo_item(other_path),
+            }
+        }
+
+        result = _get_referencing_item_keys(
+            {
+                "item_type": "Notebook",
+                "item_name": ["Shared", "Other"],
+                "file_path": "Shared.Notebook/content.py",
+            },
+            repo,
+            tmp_path.resolve(),
+            {},
+        )
+
+        assert result == ["Notebook.Shared"]
+
+    def test_multiple_paths_match_items_of_different_types(self, tmp_path):
+        notebook_path = tmp_path / "Shared.Notebook"
+        pipeline_path = tmp_path / "Load.DataPipeline"
+        notebook_path.mkdir()
+        pipeline_path.mkdir()
+        (notebook_path / "content.py").write_text("", encoding="utf-8")
+        (pipeline_path / "content.json").write_text("{}", encoding="utf-8")
+        repo = {
+            "Notebook": {"Shared": _repo_item(notebook_path)},
+            "DataPipeline": {"Load": _repo_item(pipeline_path)},
+        }
+
+        result = _get_referencing_item_keys(
+            {
+                "file_path": [
+                    "Shared.Notebook/content.py",
+                    "Load.DataPipeline/content.json",
+                ]
+            },
+            repo,
+            tmp_path.resolve(),
+            {},
+        )
+
+        assert result == ["Notebook.Shared", "DataPipeline.Load"]
+
+    def test_type_and_path_must_match_same_item(self, tmp_path):
+        notebook_path = tmp_path / "Shared.Notebook"
+        pipeline_path = tmp_path / "Load.DataPipeline"
+        notebook_path.mkdir()
+        pipeline_path.mkdir()
+        (pipeline_path / "content.json").write_text("{}", encoding="utf-8")
+        repo = {
+            "Notebook": {"Shared": _repo_item(notebook_path)},
+            "DataPipeline": {"Load": _repo_item(pipeline_path)},
+        }
+
+        result = _get_referencing_item_keys(
+            {"item_type": "Notebook", "file_path": "Load.DataPipeline/content.json"},
+            repo,
+            tmp_path.resolve(),
+            {},
+        )
+
+        assert result == []
+
+    def test_missing_path_returns_no_items(self, tmp_path):
+        notebook_path = tmp_path / "Shared.Notebook"
+        notebook_path.mkdir()
+        repo = {"Notebook": {"Shared": _repo_item(notebook_path)}}
+
+        result = _get_referencing_item_keys({"file_path": "Shared.Notebook/missing.py"}, repo, tmp_path.resolve(), {})
+
+        assert result == []
 
 
 class TestBulkPublishDependencyGraph:
@@ -980,6 +1122,50 @@ class TestBulkPublishDependencyGraph:
 
         assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == []
 
+    def test_excluded_undeployed_reference_raises_direct_error(self):
+        """A published item cannot reference a prerequisite that is excluded and not deployed."""
+        env = {
+            "find_replace": [
+                {"item_type": "DataPipeline", "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        with pytest.raises(
+            InputError,
+            match="referenced item 'Lakehouse.LH' is excluded from this deployment and does not exist",
+        ):
+            build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL"})
+
+    def test_excluded_deployed_reference_is_resolvable(self):
+        """An excluded prerequisite is valid when it already exists in the target workspace."""
+        env = {
+            "find_replace": [
+                {"item_type": "DataPipeline", "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={"Lakehouse": {"LH": {"id": "guid"}}}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL"}) == []
+
+    def test_missing_reference_ignored_when_rule_matches_no_published_item(self):
+        """An unavailable reference is irrelevant when its parameter rule applies only to excluded items."""
+        env = {
+            "find_replace": [
+                {"item_type": "Notebook", "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {
+            "DataPipeline": {"PL": _repo_item()},
+            "Notebook": {"NB": _repo_item()},
+            "Lakehouse": {"LH": _repo_item()},
+        }
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL"}) == []
+
     def test_no_edge_for_workspace_variable(self):
         """$workspace.* references never create dependency edges."""
         env = {"find_replace": [{"item_type": "DataPipeline", "replace_value": {"PPE": "$workspace.$id"}}]}
@@ -988,8 +1174,62 @@ class TestBulkPublishDependencyGraph:
 
         assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL"}) == []
 
-    def test_list_valued_item_type_filter_does_not_crash(self):
-        """A list-valued item_type filter is hashable for the referencing cache and does not raise."""
+    def test_self_reference_does_not_create_dependency_edge(self):
+        """An item referencing itself does not create a circular dependency."""
+        env = {
+            "find_replace": [
+                {"item_type": "Lakehouse", "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {"Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"Lakehouse.LH"}) == []
+
+    def test_broad_filter_excludes_only_self_reference(self):
+        """A broad rule drops its self-edge while retaining dependencies from other matching items."""
+        env = {
+            "find_replace": [
+                {
+                    "item_name": ["LH", "PL"],
+                    "replace_value": {"PPE": "$items.Lakehouse.LH.$id"},
+                },
+            ]
+        }
+        repo = {"Lakehouse": {"LH": _repo_item()}, "DataPipeline": {"PL": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"Lakehouse.LH", "DataPipeline.PL"}) == [
+            ("DataPipeline.PL", "Lakehouse.LH")
+        ]
+
+    def test_key_value_replace_creates_dependency_edge(self):
+        """A filtered key_value_replace item variable creates the same dependency as find_replace."""
+        env = {
+            "key_value_replace": [
+                {"item_type": "DataPipeline", "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == [
+            ("DataPipeline.PL", "Lakehouse.LH")
+        ]
+
+    def test_duplicate_parameter_rules_create_one_dependency_edge(self):
+        """Equivalent rules across parameter sections do not duplicate an item dependency."""
+        rule = {"item_type": "DataPipeline", "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}}
+        env = {"find_replace": [rule], "key_value_replace": [rule]}
+        repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == [
+            ("DataPipeline.PL", "Lakehouse.LH")
+        ]
+
+    def test_list_valued_item_type_filter_creates_edge(self):
+        """A list-valued item_type filter matches any listed item type."""
         env = {
             "find_replace": [
                 {"item_type": ["DataPipeline", "Notebook"], "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
@@ -998,8 +1238,23 @@ class TestBulkPublishDependencyGraph:
         repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
         ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
 
-        # A list item_type never matches a str item_type (preserved quirk) -> no referencing items -> no edges
-        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == []
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == [
+            ("DataPipeline.PL", "Lakehouse.LH")
+        ]
+
+    def test_list_valued_item_name_filter_creates_edge(self):
+        """A list-valued item_name filter matches any listed item name."""
+        env = {
+            "find_replace": [
+                {"item_name": ["PL"], "replace_value": {"PPE": "$items.Lakehouse.LH.$id"}},
+            ]
+        }
+        repo = {"DataPipeline": {"PL": _repo_item()}, "Lakehouse": {"LH": _repo_item()}}
+        ws = _graph_workspace(env, deployed_items={}, repository_items=repo)
+
+        assert build_dynamic_variable_dependency_graph(ws, {"DataPipeline.PL", "Lakehouse.LH"}) == [
+            ("DataPipeline.PL", "Lakehouse.LH")
+        ]
 
     def test_has_unfiltered_items_variable_true(self):
         """An $items.* replace_value with no filter is reported as unfiltered."""
@@ -1039,6 +1294,11 @@ def _batch_keys(batches):
     return [{f"{item.type}.{name}" for name, item, _ in batch} for batch in batches]
 
 
+def _ordered_batch_keys(batches):
+    """Reduce computed batches to item keys while preserving batch and item order."""
+    return [[f"{item.type}.{name}" for name, item, _ in batch] for batch in batches]
+
+
 class TestComputePublishBatches:
     """Tests for compute_publish_batches."""
 
@@ -1047,7 +1307,25 @@ class TestComputePublishBatches:
         batches = compute_publish_batches(items, [])
         assert batches == [items]
 
-    def test_linear_chain_produces_ordered_tiers(self):
+    def test_oversized_single_batch_error_has_no_batch_number(self, monkeypatch):
+        monkeypatch.setattr(constants, "BULK_ITEM_COUNT_LIMIT", 1)
+        items = [_batch_ctx("Notebook.A"), _batch_ctx("Notebook.B")]
+
+        with pytest.raises(InputError) as exc_info:
+            compute_publish_batches(items, [])
+
+        assert "Bulk publish batch item count (2)" in str(exc_info.value)
+        assert "batch 1" not in str(exc_info.value)
+
+    def test_oversized_later_batch_error_includes_batch_number(self, monkeypatch):
+        monkeypatch.setattr(constants, "BULK_ITEM_COUNT_LIMIT", 1)
+        items = [_batch_ctx("Lakehouse.Base"), _batch_ctx("Notebook.X"), _batch_ctx("Notebook.Y")]
+        edges = [("Notebook.X", "Lakehouse.Base"), ("Notebook.Y", "Lakehouse.Base")]
+
+        with pytest.raises(InputError, match=r"Bulk publish batch 2 item count \(2\)"):
+            compute_publish_batches(items, edges)
+
+    def test_linear_chain_produces_ordered_stages(self):
         items = [_batch_ctx("Notebook.A"), _batch_ctx("Lakehouse.B"), _batch_ctx("DataPipeline.C")]
         # C depends on B, B depends on A
         edges = [("DataPipeline.C", "Lakehouse.B"), ("Lakehouse.B", "Notebook.A")]
@@ -1057,7 +1335,7 @@ class TestComputePublishBatches:
             {"DataPipeline.C"},
         ]
 
-    def test_shared_dependency_groups_dependents_in_later_tier(self):
+    def test_shared_dependency_schedules_dependents_in_later_stage(self):
         items = [_batch_ctx("Lakehouse.Base"), _batch_ctx("Notebook.X"), _batch_ctx("Notebook.Y")]
         edges = [("Notebook.X", "Lakehouse.Base"), ("Notebook.Y", "Lakehouse.Base")]
         result = _batch_keys(compute_publish_batches(items, edges))
@@ -1070,47 +1348,63 @@ class TestComputePublishBatches:
         with pytest.raises(InputError, match="Circular dynamic variable dependency"):
             compute_publish_batches(items, edges)
 
-    def test_colocated_items_share_batch_with_dependency_tier(self):
+    def test_linked_items_form_publish_unit_within_stage(self):
         # Lakehouse.LH is referenced by a dynamic variable in Notebook.NB (LH must precede NB).
         # DataPipeline.PL references Notebook.NB by logical ID, so PL must ship with NB.
         items = [_batch_ctx("Lakehouse.LH"), _batch_ctx("Notebook.NB"), _batch_ctx("DataPipeline.PL")]
         dependency_edges = [("Notebook.NB", "Lakehouse.LH")]
-        colocation_edges = [("DataPipeline.PL", "Notebook.NB")]
-        result = _batch_keys(compute_publish_batches(items, dependency_edges, colocation_edges))
+        logical_id_links = [("DataPipeline.PL", "Notebook.NB")]
+        result = _batch_keys(compute_publish_batches(items, dependency_edges, logical_id_links))
         assert result == [{"Lakehouse.LH"}, {"Notebook.NB", "DataPipeline.PL"}]
 
-    def test_colocation_only_yields_single_batch(self):
+    def test_transitively_linked_items_share_stage_in_input_order(self):
+        """Connected logical-ID links form one unit whose members retain their input order."""
+        items = [
+            _batch_ctx("Notebook.C"),
+            _batch_ctx("Lakehouse.Base"),
+            _batch_ctx("Notebook.A"),
+            _batch_ctx("Notebook.B"),
+        ]
+        dependency_edges = [("Notebook.A", "Lakehouse.Base")]
+        logical_id_links = [("Notebook.A", "Notebook.B"), ("Notebook.B", "Notebook.C")]
+
+        assert _ordered_batch_keys(compute_publish_batches(items, dependency_edges, logical_id_links)) == [
+            ["Lakehouse.Base"],
+            ["Notebook.C", "Notebook.A", "Notebook.B"],
+        ]
+
+    def test_publish_unit_without_dependencies_yields_single_batch(self):
         items = [_batch_ctx("Notebook.NB"), _batch_ctx("DataPipeline.PL")]
-        colocation_edges = [("DataPipeline.PL", "Notebook.NB")]
-        result = _batch_keys(compute_publish_batches(items, [], colocation_edges))
+        logical_id_links = [("DataPipeline.PL", "Notebook.NB")]
+        result = _batch_keys(compute_publish_batches(items, [], logical_id_links))
         assert result == [{"Notebook.NB", "DataPipeline.PL"}]
 
-    def test_dependency_within_colocation_group_raises(self):
-        # A dynamic-variable ordering edge between two co-located items is unsatisfiable in bulk.
+    def test_dependency_within_publish_unit_raises(self):
+        # A dynamic-variable ordering edge within one publish unit is unsatisfiable in bulk.
         items = [_batch_ctx("Lakehouse.LH"), _batch_ctx("Notebook.NB")]
         dependency_edges = [("Notebook.NB", "Lakehouse.LH")]
-        colocation_edges = [("Notebook.NB", "Lakehouse.LH")]
+        logical_id_links = [("Notebook.NB", "Lakehouse.LH")]
         with pytest.raises(InputError, match="logical-ID reference"):
-            compute_publish_batches(items, dependency_edges, colocation_edges)
+            compute_publish_batches(items, dependency_edges, logical_id_links)
 
 
-def _logical_ctx(key, logical_id, contents=""):
+def _logical_ctx(key, logical_id, contents="", file_name="definition.json"):
     """Build an (item_name, item, publisher) tuple with a logical ID and one text file."""
     item_type, item_name = key.split(".", 1)
-    text_file = SimpleNamespace(type="text", contents=contents)
+    text_file = SimpleNamespace(name=file_name, type="text", contents=contents)
     item = SimpleNamespace(type=item_type, logical_id=logical_id, item_files=[text_file])
     return (item_name, item, object())
 
 
-class TestBuildLogicalReferenceEdges:
-    """Tests for build_logical_reference_edges."""
+class TestBuildLogicalIdLinks:
+    """Tests for build_logical_id_links."""
 
     def test_no_references_returns_empty(self):
         items = [
             _logical_ctx("Notebook.A", "11111111-1111-1111-1111-111111111111", contents="no refs here"),
             _logical_ctx("Lakehouse.B", "22222222-2222-2222-2222-222222222222", contents="also nothing"),
         ]
-        assert build_logical_reference_edges(items) == []
+        assert build_logical_id_links(items) == []
 
     def test_reference_detected_as_undirected_edge(self):
         pipeline_content = "referenced by 22222222-2222-2222-2222-222222222222 here"
@@ -1119,8 +1413,21 @@ class TestBuildLogicalReferenceEdges:
             _logical_ctx("Lakehouse.B", "22222222-2222-2222-2222-222222222222", contents="lakehouse body"),
             _logical_ctx("DataPipeline.C", "33333333-3333-3333-3333-333333333333", contents=pipeline_content),
         ]
-        edges = build_logical_reference_edges(items)
+        edges = build_logical_id_links(items)
         assert edges == [("DataPipeline.C", "Lakehouse.B")]
+
+    def test_platform_file_is_not_scanned_for_references(self):
+        items = [
+            _logical_ctx("Notebook.A", "11111111-1111-1111-1111-111111111111"),
+            _logical_ctx(
+                "Lakehouse.B",
+                "22222222-2222-2222-2222-222222222222",
+                contents="11111111-1111-1111-1111-111111111111",
+                file_name=".platform",
+            ),
+        ]
+
+        assert build_logical_id_links(items) == []
 
     def test_multiple_references_are_detected_once(self):
         pipeline_content = (
@@ -1133,27 +1440,20 @@ class TestBuildLogicalReferenceEdges:
             _logical_ctx("DataPipeline.C", "33333333-3333-3333-3333-333333333333", contents=pipeline_content),
         ]
 
-        assert build_logical_reference_edges(items) == [
+        assert set(build_logical_id_links(items)) == {
             ("DataPipeline.C", "Lakehouse.B"),
             ("DataPipeline.C", "Notebook.A"),
-        ]
-
-    def test_default_and_missing_logical_ids_ignored(self):
-        items = [
-            _logical_ctx("Notebook.A", constants.DEFAULT_GUID, contents="00000000-0000-0000-0000-000000000000"),
-            _logical_ctx("Lakehouse.B", "", contents="nothing"),
-        ]
-        assert build_logical_reference_edges(items) == []
+        }
 
 
 # =============================================================================
-# Tiered Execution Loop (publish_all_bulk)
+# Staged Execution Loop (publish_all_bulk)
 # =============================================================================
 
 
 @pytest.mark.usefixtures("bulk_publish_flags")
-class TestBulkPublishTieredExecution:
-    """Tests that publish_all_bulk issues one bulk call per batch and refreshes between tiers."""
+class TestBulkPublishStagedExecution:
+    """Tests that publish_all_bulk issues one bulk call per batch and refreshes between stages."""
 
     def _workspace_with_two_items(self):
         """MagicMock workspace whose Phase-1 collection yields two Notebook items."""
@@ -1191,29 +1491,8 @@ class TestBulkPublishTieredExecution:
         assert ws._publish_items.call_count == 2
         # Deployed items refreshed once, between the two batches
         assert ws._refresh_deployed_items.call_count == 1
-        # Stale $items.* cache entry dropped between tiers; $workspace.* entry retained
+        # Stale $items.* cache entry dropped between stages; $workspace.* entry retained
         assert ws._dynamic_var_cache == {"$workspace.$id": "wsid"}
-
-    def test_oversized_later_batch_fails_before_any_publish(self):
-        """An oversized batch anywhere raises before any batch is published (no partial deployment)."""
-        ws, publisher, base, _dep = self._workspace_with_two_items()
-        oversized = [("x", SimpleNamespace(type="Notebook"), publisher)] * (constants.BULK_ITEM_COUNT_LIMIT + 1)
-        batches = [[("base", base, publisher)], oversized]
-
-        with (
-            patch.object(ItemPublisher, "get_item_types_to_publish", return_value=[(1, ItemType.NOTEBOOK)]),
-            patch.object(ItemPublisher, "create", return_value=publisher),
-            patch.object(ItemPublisher, "_mark_skipped_items", return_value=[]),
-            patch(
-                "fabric_cicd._items._bulk_publish_dependencies.compute_publish_batches",
-                return_value=batches,
-            ),
-            pytest.raises(InputError, match="exceeds the API limit"),
-        ):
-            ItemPublisher.publish_all_bulk(ws)
-
-        # Nothing was published because validation fails fast for all batches upfront
-        assert ws._publish_items.call_count == 0
 
     def test_single_batch_makes_no_refresh(self):
         ws, publisher, base, dep = self._workspace_with_two_items()
@@ -1236,7 +1515,7 @@ class TestBulkPublishTieredExecution:
         assert ws._dynamic_var_cache == {"$workspace.$id": "wsid", "$items.Notebook.base.$id": "stale"}
 
     def test_waits_for_async_attribute_before_refresh(self):
-        """A source item referenced downstream via an async attribute is waited on between tiers."""
+        """A source item referenced downstream via an async attribute is waited on between stages."""
         base = SimpleNamespace(type="Lakehouse", guid="lh-guid")
         dep = SimpleNamespace(type="Notebook", guid="nb-guid")
 
@@ -1260,7 +1539,7 @@ class TestBulkPublishTieredExecution:
                 return_value=[],
             ),
             patch(
-                "fabric_cicd._items._bulk_publish_dependencies.get_async_provisioned_dependencies",
+                "fabric_cicd._items._bulk_publish_dependencies.get_async_attributes_to_wait_for",
                 return_value={"Lakehouse.base": {"sqlendpoint"}},
             ),
             patch(
@@ -1270,34 +1549,45 @@ class TestBulkPublishTieredExecution:
         ):
             ItemPublisher.publish_all_bulk(ws)
 
-        # The source item's async attribute is awaited before the refresh feeds the next tier
+        # The source item's async attribute is awaited before the refresh feeds the next stage
         ws._wait_for_item_attribute_provisioning.assert_called_once_with("Lakehouse", "lh-guid", "base", "sqlendpoint")
         assert ws._refresh_deployed_items.call_count == 1
+        staged_calls = [
+            call[0]
+            for call in ws.mock_calls
+            if call[0] in {"_publish_items", "_wait_for_item_attribute_provisioning", "_refresh_deployed_items"}
+        ]
+        assert staged_calls == [
+            "_publish_items",
+            "_wait_for_item_attribute_provisioning",
+            "_refresh_deployed_items",
+            "_publish_items",
+        ]
 
 
 # =============================================================================
-# Async-Provisioned Attribute Dependencies (SQL endpoint / query URI)
+# Async Attributes to Wait For (SQL endpoint / query URI)
 # =============================================================================
 
 
-class TestAsyncProvisionedDependencies:
-    """get_async_provisioned_dependencies maps to-be-published sources to their async attributes."""
+class TestAsyncAttributesToWaitFor:
+    """Map published items to asynchronously provisioned attributes that must be awaited."""
 
     def test_sqlendpoint_reference_mapped(self):
         env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$sqlendpoint"}}]}
         ws = _graph_workspace(env, deployed_items={}, repository_items={})
-        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH"}) == {"Lakehouse.LH": {"sqlendpoint"}}
+        assert get_async_attributes_to_wait_for(ws, {"Lakehouse.LH"}) == {"Lakehouse.LH": {"sqlendpoint"}}
 
     def test_id_attribute_is_not_async(self):
         """$id resolves immediately from the items list and needs no provisioning wait."""
         env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$id"}}]}
         ws = _graph_workspace(env, deployed_items={}, repository_items={})
-        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH"}) == {}
+        assert get_async_attributes_to_wait_for(ws, {"Lakehouse.LH"}) == {}
 
     def test_reference_outside_publish_set_ignored(self):
         env = {"find_replace": [{"replace_value": {"PPE": "$items.Lakehouse.LH.$sqlendpoint"}}]}
         ws = _graph_workspace(env, deployed_items={}, repository_items={})
-        assert get_async_provisioned_dependencies(ws, {"Notebook.NB"}) == {}
+        assert get_async_attributes_to_wait_for(ws, {"Notebook.NB"}) == {}
 
     def test_multiple_attributes_aggregated_per_source(self):
         env = {
@@ -1308,7 +1598,7 @@ class TestAsyncProvisionedDependencies:
             ]
         }
         ws = _graph_workspace(env, deployed_items={}, repository_items={})
-        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH", "Eventhouse.EH"}) == {
+        assert get_async_attributes_to_wait_for(ws, {"Lakehouse.LH", "Eventhouse.EH"}) == {
             "Lakehouse.LH": {"sqlendpoint", "sqlendpointid"},
             "Eventhouse.EH": {"queryserviceuri"},
         }
@@ -1317,7 +1607,7 @@ class TestAsyncProvisionedDependencies:
         """Cross-workspace items live in another workspace and impose no in-batch provisioning wait."""
         env = {"find_replace": [{"replace_value": {"PPE": "$workspace.other.$items.Lakehouse.LH.$sqlendpoint"}}]}
         ws = _graph_workspace(env, deployed_items={}, repository_items={})
-        assert get_async_provisioned_dependencies(ws, {"Lakehouse.LH"}) == {}
+        assert get_async_attributes_to_wait_for(ws, {"Lakehouse.LH"}) == {}
 
 
 # =============================================================================

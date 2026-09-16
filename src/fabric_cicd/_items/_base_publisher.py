@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from fabric_cicd import constants
-from fabric_cicd._common._exceptions import InputError, PublishError
+from fabric_cicd._common._exceptions import PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd.constants import PARALLEL_MAX_WORKERS, ItemType
 from fabric_cicd.fabric_workspace import FabricWorkspace
@@ -222,8 +222,6 @@ class ItemPublisher(Publisher):
         Returns:
             List of (order_num, ItemType) tuples for item types that should be published.
         """
-        from fabric_cicd import constants
-
         result = []
         for order_num, item_type in constants.SERIAL_ITEM_PUBLISH_ORDER.items():
             if (
@@ -247,8 +245,6 @@ class ItemPublisher(Publisher):
         Returns:
             List of item type strings in the order they should be unpublished.
         """
-        from fabric_cicd import constants
-
         unpublish_order = []
         for item_type in reversed(list(constants.SERIAL_ITEM_PUBLISH_ORDER.values())):
             if (
@@ -306,15 +302,15 @@ class ItemPublisher(Publisher):
     @staticmethod
     def publish_all_bulk(fabric_workspace_obj: "FabricWorkspace") -> list["ItemPublisher"]:
         """
-        Execute bulk publish across all item types in scope, with batched (tiered) execution
+        Execute bulk publish across all item types in scope, using staged publish batches
         when dynamic replacement variable dependencies require it.
 
         Lifecycle:
             1. pre_publish_all() — per type
             2. get_items_to_publish() — per type, collect into one pool
             3. Build dependency graph from $items.* dynamic replacement variables
-            4. Compute publish batches (topological sort)
-            5. For each batch: _publish_items() → refresh deployed items between batches
+            4. Compute staged publish batches (topological sort)
+            5. For each batch: _publish_items() → refresh deployed items between stages
             6. post_publish_all() — per type
 
         Returns:
@@ -322,9 +318,9 @@ class ItemPublisher(Publisher):
         """
         from fabric_cicd._items._bulk_publish_dependencies import (
             build_dynamic_variable_dependency_graph,
-            build_logical_reference_edges,
+            build_logical_id_links,
             compute_publish_batches,
-            get_async_provisioned_dependencies,
+            get_async_attributes_to_wait_for,
         )
 
         publishers: list[ItemPublisher] = []
@@ -363,37 +359,29 @@ class ItemPublisher(Publisher):
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
 
-            # Build dynamic variable dependencies; none yields a single batch
             dependency_edges: list[tuple[str, str]] = []
-            colocation_edges: list[tuple[str, str]] = []
-            async_source_map: dict[str, set[str]] = {}
+            logical_id_links: list[tuple[str, str]] = []
+            async_attributes_to_wait_for: dict[str, set[str]] = {}
+
+            # Build dynamic variable dependencies; none yields a single batch
             if fabric_workspace_obj.contains_param_item_vars:
                 publish_item_keys = {f"{item.type}.{item_name}" for item_name, item, _publisher in items_with_context}
                 dependency_edges = build_dynamic_variable_dependency_graph(fabric_workspace_obj, publish_item_keys)
-                async_source_map = get_async_provisioned_dependencies(fabric_workspace_obj, publish_item_keys)
-                # Logical-ID references only matter once ordering splits items across tiers
+                async_attributes_to_wait_for = get_async_attributes_to_wait_for(fabric_workspace_obj, publish_item_keys)
+                # Logical-ID references only matter once ordering splits items across stages
                 if dependency_edges:
-                    colocation_edges = build_logical_reference_edges(items_with_context)
+                    logical_id_links = build_logical_id_links(items_with_context)
 
-            batches = compute_publish_batches(items_with_context, dependency_edges, colocation_edges)
+            batches = compute_publish_batches(items_with_context, dependency_edges, logical_id_links)
 
-            # Validate all batch sizes before publishing to prevent partial deployment
-            for batch_index, batch_items in enumerate(batches):
-                batch_count = len(batch_items)
-                if batch_count > constants.BULK_ITEM_COUNT_LIMIT:
-                    msg = (
-                        f"Bulk publish batch {batch_index + 1} item count ({batch_count}) exceeds the API limit "
-                        f"of {constants.BULK_ITEM_COUNT_LIMIT} items."
-                    )
-                    raise InputError(msg, logger)
-
+            # Iterate over each batch and publish
             for batch_index, batch_items in enumerate(batches):
                 if len(batches) > 1:
                     logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}")
                     logger.debug(
                         "Publishing batch %s items: %s",
                         batch_index + 1,
-                        sorted(f"{item.type}: {name}" for name, item, _ in batch_items),
+                        [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
                 fabric_workspace_obj._publish_items(
@@ -406,7 +394,7 @@ class ItemPublisher(Publisher):
                     provisioning_tasks = (
                         (item, item_name, attribute_name)
                         for item_name, item, _publisher in batch_items
-                        for attribute_name in sorted(async_source_map.get(f"{item.type}.{item_name}", ()))
+                        for attribute_name in sorted(async_attributes_to_wait_for.get(f"{item.type}.{item_name}", ()))
                     )
                     for item, item_name, attribute_name in provisioning_tasks:
                         fabric_workspace_obj._wait_for_item_attribute_provisioning(

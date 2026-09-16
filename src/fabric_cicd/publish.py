@@ -224,7 +224,7 @@ def publish_all_items(
         if unsupported:
             reasons.append(f"unsupported item types: {', '.join(sorted(unsupported))}")
 
-        # Dynamic replacement variables are supported in bulk mode via tiered publishing, EXCEPT
+        # Dynamic replacement variables are supported in bulk mode via staged publishing, EXCEPT
         # when an $items.* replace_value has no file filter — dependency scope cannot be narrowed, so fall back to standard deployment in that case only
         if (
             not unsupported
