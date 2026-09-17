@@ -32,10 +32,9 @@
 
 ## Cosmos DB Database
 
-- **Preview:** Cosmos DB in Fabric is currently in preview. It is not yet listed in the [item definition overview](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/item-definition-overview), but the Fabric API supports full definition deployment (`definition.json` + `.platform`) and service principal authentication.
 - **Parameterization:**
     - The `find_replace` section in the `parameter.yml` file is not applied.
-- **Cosmos DB content (data) is not deployed.** Only the item definition is deployed.
+- **Initial deployment** creates the item definition without the data loaded; data must be added afterward.
 - **Unpublish** is disabled by default, enable with feature flag `enable_cosmosdbdatabase_unpublish`.
 
 ## Dataflow
