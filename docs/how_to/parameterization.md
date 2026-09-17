@@ -1178,7 +1178,7 @@ find_replace:
           PPE: "$workspace.$id"
           PROD: "$workspace.$id"
             file_path: "/SalesGraphModel.GraphModel/dataSources.json"
-    - find_value: "c9b37ed0-6db2-43af-b3d2-fd5ea6d8aa44" # source Lakehouse ID
+    - find_value: "a4d9b672-3e81-4f5c-9a20-7b16d8c043ef" # source Lakehouse ID
       replace_value:
           PPE: "$items.Lakehouse.Sales_Lakehouse.$id"
           PROD: "$items.Lakehouse.Sales_Lakehouse.$id"

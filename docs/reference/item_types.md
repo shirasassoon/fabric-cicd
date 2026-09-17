@@ -90,7 +90,7 @@
 - **Parameterization:**
     - The data source (e.g., Lakehouse) will always point to the original item unless parameterized in the `find_replace` section of the `parameter.yml` file.
     - It is recommended to use the supported variables in `find_replace` for dynamic replacement of the source workspace and item IDs.
-    - **Note:** The data source must contain the schema expected by the Graph Model. Deploying an empty source Lakehouse alongside the Graph Model will cause Graph Model creation to fail, even if the Lakehouse item is created successfully. Graph Model creation will also fail if it is re-pointed to a source with different or missing tables. To avoid this, deploy the Lakehouse first, populate it with the expected tables and content, and then deploy the dependent Graph Model with the appropriate parameterization.
+- **Initial deployment** requires the target Lakehouse to contain the schema and Delta tables expected by the Graph Model. Creating an empty Lakehouse alongside the Graph Model is not sufficient, even if the Lakehouse item is created successfully. Populate the Lakehouse before deploying the dependent Graph Model.
 
 ## KQL Database
 
