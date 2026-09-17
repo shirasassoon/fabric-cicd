@@ -30,6 +30,14 @@
     - Connections will always point to the original data source unless parameterized in the `find_replace` section of the `parameter.yml` file.
 - **Initial deployment** requires manual configuration of the connection after deployment.
 
+## Cosmos DB Database
+
+- **Preview:** Cosmos DB in Fabric is currently in preview. It is not yet listed in the [item definition overview](https://learn.microsoft.com/en-us/rest/api/fabric/articles/item-management/definitions/item-definition-overview), but the Fabric API supports full definition deployment (`definition.json` + `.platform`) and service principal authentication.
+- **Parameterization:**
+    - The `find_replace` section in the `parameter.yml` file is not applied.
+- **Cosmos DB content (data) is not deployed.** Only the item definition is deployed.
+- **Unpublish** is disabled by default, enable with feature flag `enable_cosmosdbdatabase_unpublish`.
+
 ## Dataflow
 
 - **Parameterization:**
