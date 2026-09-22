@@ -102,9 +102,9 @@
 ## Lakehouse
 
 - **Parameterization:**
-    - The `find_replace` section in the `parameter.yml` file is not applied.
-- **Shortcut** publish is disabled by default (for now), enable with feature flag `enable_shortcut_publish`.
-- **Schemas are not deployed** unless the schema has a shortcut present.
+    - The `find_replace` section in the `parameter.yml` file is applied to the Lakehouse definition files (e.g., `lakehouse.metadata.json`, `alm.settings.json`). Shortcut references are parameterized separately (see below).
+- **Full item definition** is deployed (create and update), including schemas defined in `lakehouse.metadata.json`.
+- **Shortcut** publish is disabled by default (for now), enable with feature flag `enable_shortcut_publish`. Shortcuts are deployed separately via the OneLake Shortcuts API and are excluded from the item definition.
 - **Unpublish** is disabled by default, enable with feature flag `enable_lakehouse_unpublish`.
 
 ## Map
