@@ -19,7 +19,7 @@ from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._items._lakehouse import LakehousePublisher
 from fabric_cicd._items._notebook import NotebookPublisher
 from fabric_cicd._items._paginatedreport import PaginatedReportPublisher
-from fabric_cicd.constants import API_FORMAT_MAPPING, EXCLUDE_PATH_REGEX_MAPPING, ItemType
+from fabric_cicd.constants import API_FORMAT_MAPPING, EXCLUDE_PATH_REGEX_MAPPING, FeatureFlag, ItemType
 from fabric_cicd.fabric_workspace import FabricWorkspace
 
 # =============================================================================
@@ -1180,6 +1180,38 @@ class TestLakehousePublisher:
         pattern = EXCLUDE_PATH_REGEX_MAPPING.get(ItemType.LAKEHOUSE.value)
         assert re.match(pattern, "shortcuts.metadata.json")
         assert not re.match(pattern, "lakehouse.metadata.json")
+
+    def test_publish_one_definition_shortcuts_flag_includes_shortcuts(self, publisher, mock_workspace):
+        """Test that with the definition-shortcuts flag, shortcuts are NOT excluded from the definition."""
+        mock_item = MagicMock()
+        mock_item.skip_publish = True
+
+        original_flags = constants.FEATURE_FLAG.copy()
+        constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_LAKEHOUSE_DEFINITION_SHORTCUTS.value)
+        try:
+            publisher.publish_one("test_lakehouse", mock_item)
+        finally:
+            constants.FEATURE_FLAG.clear()
+            constants.FEATURE_FLAG.update(original_flags)
+
+        _, kwargs = mock_workspace._publish_item.call_args
+        # exclude_path is omitted so shortcuts.metadata.json flows into the definition
+        assert "exclude_path" not in kwargs
+        assert kwargs["api_format"] == API_FORMAT_MAPPING.get(ItemType.LAKEHOUSE.value)
+
+    def test_post_publish_all_skips_shortcut_publisher_with_definition_flag(self, publisher):
+        """Test that the separate shortcut publish flow is skipped when the definition-shortcuts flag is set."""
+        # Both flags set: definition-shortcuts should take precedence and skip the separate publisher.
+        original_flags = constants.FEATURE_FLAG.copy()
+        constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_LAKEHOUSE_DEFINITION_SHORTCUTS.value)
+        constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_SHORTCUT_PUBLISH.value)
+        try:
+            with patch("fabric_cicd._items._lakehouse.ShortcutPublisher") as mock_shortcut_cls:
+                publisher.post_publish_all()
+                mock_shortcut_cls.assert_not_called()
+        finally:
+            constants.FEATURE_FLAG.clear()
+            constants.FEATURE_FLAG.update(original_flags)
 
 
 # =============================================================================

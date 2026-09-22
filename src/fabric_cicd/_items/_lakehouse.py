@@ -104,14 +104,20 @@ class LakehousePublisher(ItemPublisher):
 
     def publish_one(self, item_name: str, item: Item) -> None:
         """Publish a single Lakehouse item."""
-        # Shortcuts are excluded from the definition and deployed separately via post_publish_all()
-        self.fabric_workspace_obj._publish_item(
-            item_name=item_name,
-            item_type=self.item_type,
-            exclude_path=EXCLUDE_PATH_REGEX_MAPPING.get(self.item_type),
-            api_format=API_FORMAT_MAPPING.get(self.item_type),
-            skip_publish_logging=True,
-        )
+        definition_shortcuts = FeatureFlag.ENABLE_LAKEHOUSE_DEFINITION_SHORTCUTS.value in constants.FEATURE_FLAG
+
+        publish_kwargs = {
+            "item_name": item_name,
+            "item_type": self.item_type,
+            "api_format": API_FORMAT_MAPPING.get(self.item_type),
+            "skip_publish_logging": True,
+        }
+        # By default, shortcuts are excluded from the definition and deployed separately via post_publish_all().
+        # When the experimental flag is enabled, shortcuts.metadata.json is included in the item definition instead.
+        if not definition_shortcuts:
+            publish_kwargs["exclude_path"] = EXCLUDE_PATH_REGEX_MAPPING.get(self.item_type)
+
+        self.fabric_workspace_obj._publish_item(**publish_kwargs)
 
         # Check if the item is published to avoid any post publish actions
         if item.skip_publish:
@@ -123,6 +129,11 @@ class LakehousePublisher(ItemPublisher):
 
     def post_publish_all(self) -> None:
         """Publish shortcuts after all lakehouses are published to protect interrelationships."""
+        # When shortcuts are deployed as part of the item definition, the separate shortcut API flow is redundant.
+        if FeatureFlag.ENABLE_LAKEHOUSE_DEFINITION_SHORTCUTS.value in constants.FEATURE_FLAG:
+            logger.debug("Shortcuts deployed via the Lakehouse definition; skipping separate shortcut publish.")
+            return
+
         if FeatureFlag.ENABLE_SHORTCUT_PUBLISH.value in constants.FEATURE_FLAG:
             log_header(logger, "Publishing Lakehouse Shortcuts")
             for item_obj in self.fabric_workspace_obj.repository_items.get(self.item_type, {}).values():
