@@ -105,6 +105,7 @@
     - The `find_replace` section in the `parameter.yml` file is applied to the Lakehouse definition files (e.g., `lakehouse.metadata.json`, `alm.settings.json`). Shortcut references are parameterized separately (see below).
 - **Full item definition** is deployed (create and update), including schemas defined in `lakehouse.metadata.json`.
 - **Shortcut** publish is disabled by default (for now), enable with feature flag `enable_shortcut_publish`. Shortcuts are deployed separately via the OneLake Shortcuts API and are excluded from the item definition.
+    - **[Experimental]** Set `enable_lakehouse_definition_shortcuts` to deploy shortcuts as part of the Lakehouse item definition instead of via the separate OneLake Shortcuts API. This simplifies self-referencing shortcuts (empty GUIDs are mapped to the current lakehouse/workspace by the API) and orphan cleanup, but does not support per-shortcut failure tolerance (`continue_on_shortcut_failure`) or `shortcut_exclude_regex`, and requires referenced lakehouses to exist first.
 - **Unpublish** is disabled by default, enable with feature flag `enable_lakehouse_unpublish`.
 
 ## Map
