@@ -142,6 +142,7 @@ class ItemPublisher(Publisher):
         from fabric_cicd._items._activator import ActivatorPublisher
         from fabric_cicd._items._apacheairflowjob import ApacheAirflowJobPublisher
         from fabric_cicd._items._copyjob import CopyJobPublisher
+        from fabric_cicd._items._cosmosdbdatabase import CosmosDBDatabasePublisher
         from fabric_cicd._items._dataagent import DataAgentPublisher
         from fabric_cicd._items._databuildtooljob import DataBuildToolJobPublisher
         from fabric_cicd._items._dataflowgen2 import DataflowPublisher
@@ -149,6 +150,7 @@ class ItemPublisher(Publisher):
         from fabric_cicd._items._environment import EnvironmentPublisher
         from fabric_cicd._items._eventhouse import EventhousePublisher
         from fabric_cicd._items._eventstream import EventstreamPublisher
+        from fabric_cicd._items._graphmodel import GraphModelPublisher
         from fabric_cicd._items._graphqlapi import GraphQLApiPublisher
         from fabric_cicd._items._kqldashboard import KQLDashboardPublisher
         from fabric_cicd._items._kqldatabase import KQLDatabasePublisher
@@ -175,6 +177,7 @@ class ItemPublisher(Publisher):
             ItemType.MIRRORED_DATABASE: MirroredDatabasePublisher,
             ItemType.LAKEHOUSE: LakehousePublisher,
             ItemType.SQL_DATABASE: SQLDatabasePublisher,
+            ItemType.COSMOS_DB_DATABASE: CosmosDBDatabasePublisher,
             ItemType.ENVIRONMENT: EnvironmentPublisher,
             ItemType.USER_DATA_FUNCTION: UserDataFunctionPublisher,
             ItemType.EVENTHOUSE: EventhousePublisher,
@@ -199,6 +202,7 @@ class ItemPublisher(Publisher):
             ItemType.ML_EXPERIMENT: MLExperimentPublisher,
             ItemType.ONTOLOGY: OntologyPublisher,
             ItemType.MAP: MapPublisher,
+            ItemType.GRAPH_MODEL: GraphModelPublisher,
         }
 
         publisher_class = publisher_mapping.get(item_type)
