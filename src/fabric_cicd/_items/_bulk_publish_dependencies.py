@@ -53,7 +53,7 @@ class _PublishUnits:
     """Store publish-units in both lookup directions."""
 
     items_by_representative: dict[str, list[str]]  # {representative_item_key: [item_key, ...]}
-    representative_by_item: dict[str, str]  # {item_key: representative_item_key}
+    representative_by_item_key: dict[str, str]  # {item_key: representative_item_key}
 
 
 def build_dynamic_variable_dependency_graph(
@@ -207,6 +207,9 @@ def build_logical_id_links(
         return []
 
     # Identify logical ID bindings between items based on their file contents (skip .platform files)
+    # Example: a DataPipeline.Sample_PL file contains Notebook.Sample_NB's logical ID, referencing_key is
+    # "DataPipeline.Sample_PL" and referenced_key is "Notebook.Sample_NB"
+    # Note: links are directionless and can be stored in reverse order for deduplication
     for item_name, item, _publisher in items_with_context:
         referencing_key = f"{item.type}.{item_name}"
         for file in item.item_files:
@@ -279,7 +282,8 @@ def compute_publish_batches(
     # Build publish stages based on dependency edges
     publish_stages = _build_publish_stages(publish_units, dependency_edges, item_key_index)
 
-    # Form a publish batch from each dependency stage
+    # Each stage contains publish-unit representatives whose dependencies were satisfied by earlier
+    # stages. Expand all units in the stage into one batch that can be published together
     batches: list[list[tuple[str, object, object]]] = []
     for stage_index, stage in enumerate(publish_stages):
         batch: list[tuple[str, object, object]] = []
@@ -331,20 +335,20 @@ def _build_publish_units(
 
     # Map each item directly to the item that represents its final publish unit {item_key: representative_key}
     # Example: {"item1": "item1", "item2": "item1", "item3": "item1"}
-    representative_by_item = {key: _find_unit_representative(key, parent_by_item) for key in ordered_keys}
+    representative_by_item_key = {key: _find_unit_representative(key, parent_by_item) for key in ordered_keys}
 
     # Collect publish unit members in their original input order {representative_key: [item_key, ...]}
     # Example: {"item1": ["item1", "item2", "item3"]}
     items_by_representative: dict[str, list[str]] = {}
     for key in ordered_keys:
-        items_by_representative.setdefault(representative_by_item[key], []).append(key)
+        items_by_representative.setdefault(representative_by_item_key[key], []).append(key)
 
     logger.debug("Built %d publish units: %s", len(items_by_representative), items_by_representative)
 
     # Return the constructed publish units containing the mapping of representatives to their items and vice versa
     return _PublishUnits(
         items_by_representative=items_by_representative,
-        representative_by_item=representative_by_item,
+        representative_by_item_key=representative_by_item_key,
     )
 
 
@@ -376,8 +380,8 @@ def _build_publish_stages(
 
     # Convert item-level dependency edges into edges between publish units
     for referencing, referenced in dependency_edges:
-        referencing_unit = publish_units.representative_by_item.get(referencing)
-        referenced_unit = publish_units.representative_by_item.get(referenced)
+        referencing_unit = publish_units.representative_by_item_key.get(referencing)
+        referenced_unit = publish_units.representative_by_item_key.get(referenced)
 
         # Reject dependencies that require one publish unit to be published both together and in sequence
         if referencing_unit == referenced_unit:
