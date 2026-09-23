@@ -2698,6 +2698,7 @@ def test_validate_dynamic_replacement_variables_rejects_items_in_find_value(empt
     ok, msg = empty_parameter._validate_dynamic_replacement_variables()
 
     assert ok is False
+    assert msg.startswith("Invalid dynamic replacement variable(s):")
     assert "find_replace[1].find_value" in msg
     assert constants.PARAMETER_MSGS["unsupported_find_value_variable"].format(find_value) in msg
 
@@ -2766,6 +2767,104 @@ def test_validate_dynamic_replacement_variables_accepts_same_workspace_item_repl
     assert ok is True
     assert msg == "Valid dynamic replacement variables"
     assert constants.PARAMETER_MSGS["cross_workspace_variable_warning"] not in caplog.messages
+
+
+@pytest.mark.parametrize("feature_enabled", [False, True])
+def test_validate_dynamic_replacement_variables_rejects_unresolved_environment_tokens(
+    empty_parameter, monkeypatch, feature_enabled
+):
+    """Unresolved $ENV: tokens fail validation regardless of feature state."""
+    feature_flags = {"enable_environment_variable_replacement"} if feature_enabled else set()
+    monkeypatch.setattr(constants, "FEATURE_FLAG", feature_flags)
+    empty_parameter.environment = "PPE"
+    empty_parameter.environment_parameter = {
+        "find_replace": [
+            {
+                "find_value": "source-lakehouse-id",
+                "replace_value": {
+                    "PPE": "$ENV:ppe_lakehouse",
+                    "PROD": "$ENV:prod_lakehouse",
+                },
+            }
+        ]
+    }
+
+    ok, msg = empty_parameter._validate_dynamic_replacement_variables()
+
+    message_key = "environment_variable_unresolved" if feature_enabled else "environment_variable_feature_disabled"
+    assert ok is False
+    assert msg.startswith("Invalid environment variable reference(s):")
+    assert "find_replace[1].replace_value.PPE" in msg
+    assert constants.PARAMETER_MSGS[message_key].format("$ENV:ppe_lakehouse") in msg
+    if feature_enabled:
+        assert "$ENV:prod_lakehouse" not in msg
+    else:
+        assert "find_replace[1].replace_value.PROD" in msg
+        assert constants.PARAMETER_MSGS[message_key].format("$ENV:prod_lakehouse") in msg
+
+
+def test_validate_dynamic_replacement_variables_uses_generic_header_for_mixed_errors(empty_parameter, monkeypatch):
+    """Mixed environment and dynamic variable failures use a neutral heading."""
+    monkeypatch.setattr(constants, "FEATURE_FLAG", set())
+    empty_parameter.environment_parameter = {
+        "find_replace": [
+            {
+                "find_value": "$items.Lakehouse.Example.$id",
+                "replace_value": {"DEV": "$ENV:LAKEHOUSE_ID"},
+            }
+        ]
+    }
+
+    ok, msg = empty_parameter._validate_dynamic_replacement_variables()
+
+    assert ok is False
+    assert msg.startswith("Invalid replacement variables:")
+    assert constants.PARAMETER_MSGS["environment_variable_feature_disabled"].format("$ENV:LAKEHOUSE_ID") in msg
+
+
+def test_validate_dynamic_replacement_variables_ignores_unresolved_token_for_other_environment(
+    empty_parameter, monkeypatch
+):
+    """An unresolved $ENV: token for another environment does not block deployment."""
+    monkeypatch.setattr(constants, "FEATURE_FLAG", {"enable_environment_variable_replacement"})
+    empty_parameter.environment = "PPE"
+    empty_parameter.environment_parameter = {
+        "find_replace": [
+            {
+                "find_value": "source-lakehouse-id",
+                "replace_value": {
+                    "PPE": "resolved-ppe-value",
+                    "PROD": "$ENV:missing_prod_value",
+                },
+            }
+        ]
+    }
+
+    ok, msg = empty_parameter._validate_dynamic_replacement_variables()
+
+    assert ok is True
+    assert msg == "Valid dynamic replacement variables"
+
+
+def test_validate_dynamic_replacement_variables_ignores_environment_specific_token_without_target(
+    empty_parameter, monkeypatch
+):
+    """An unresolved environment-specific token is inactive when no target environment is provided."""
+    monkeypatch.setattr(constants, "FEATURE_FLAG", {"enable_environment_variable_replacement"})
+    empty_parameter.environment = "N/A"
+    empty_parameter.environment_parameter = {
+        "find_replace": [
+            {
+                "find_value": "source-lakehouse-id",
+                "replace_value": {"PPE": "$ENV:missing_ppe_value"},
+            }
+        ]
+    }
+
+    ok, msg = empty_parameter._validate_dynamic_replacement_variables()
+
+    assert ok is True
+    assert msg == "Valid dynamic replacement variables"
 
 
 @pytest.mark.parametrize("find_value", ["$workspace.$id", "$workspace.$name", "$workspace.$name_encoded"])
