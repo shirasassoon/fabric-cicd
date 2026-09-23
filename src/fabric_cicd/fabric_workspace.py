@@ -886,10 +886,10 @@ class FabricWorkspace:
 
         logger.info(f"Publishing {len(items_with_context)} item(s) in bulk")
 
-        # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions(beta)
+        # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions
         response = self.endpoint.invoke(
             method="POST",
-            url=f"{self.base_api_url}/items/bulkImportDefinitions?beta=True",
+            url=f"{self.base_api_url}/items/bulkImportDefinitions",
             body={
                 "definitionParts": definition_parts,
                 "options": {"allowPairingByName": True},
