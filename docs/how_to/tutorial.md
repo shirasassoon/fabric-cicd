@@ -60,7 +60,7 @@ Create and activate a virtual environment, then install the library:
     pip install fabric-cicd
     ```
 
-This also installs `azure-identity`, which you'll use for authentication.
+The installation includes required dependencies such as `azure-identity`, which manages authentication.
 
 ## Step 3: Authenticate with Azure
 
@@ -70,10 +70,11 @@ fabric-cicd requires an explicit credential to interact with the Fabric APIs. Fo
 az login
 ```
 
-This opens a browser where you sign in with the account that has access to your Fabric workspace. Once signed in, your session is cached and fabric-cicd can use it.
+Sign in with an account that has access to your Fabric workspace.
 
 !!! note
-The identity you sign in with must have **Contributor** (or higher) permissions on the target Fabric workspace.
+
+    The identity you sign in with must have **Contributor** (or higher) permissions on the target Fabric workspace.
 
 ## Step 4: Find Your Workspace ID
 
@@ -87,35 +88,54 @@ https://app.fabric.microsoft.com/groups/<workspace-id>/list
 
 Copy this ID — you'll use it in the next step.
 
-## Step 5: Write the Deployment Script
+!!! note
 
-Create a file called `deploy.py` in your repository root:
+    You can use the workspace name instead of its ID by setting `workspace` rather than `workspace_id` in the configuration file.
+
+## Step 5: Configure the Deployment
+
+Create a file called `config.yml` in your repository root:
+
+```yaml
+core:
+    workspace_id: "your-workspace-id" # Alternatively, use workspace: "your-workspace-name"
+    repository_directory: "your-workspace-directory"
+    item_types_in_scope: # Optional
+        - Notebook
+        - DataPipeline
+        - Environment
+
+publish:
+    skip: false
+
+unpublish:
+    skip: false
+```
+
+!!! note
+
+    Publishing and unpublishing run by default. Set `publish.skip` or `unpublish.skip` to `true` to disable that operation. Unpublishing removes items from the target workspace when they are no longer present in the repository.
+
+Then create a file called `deploy.py` in the same directory:
 
 ```python
 from pathlib import Path
 
 from azure.identity import AzureCliCredential
-from fabric_cicd import FabricWorkspace, publish_all_items, unpublish_all_orphan_items
+from fabric_cicd import deploy_with_config
 
-# Authenticate using Azure CLI
-token_credential = AzureCliCredential()
+# Path to the deployment configuration
+config_file_path = str(Path(__file__).resolve().parent / "config.yml")
 
-# Path to the directory containing your Fabric items
-repository_directory = str(Path(__file__).resolve().parent / "your-workspace-directory")
+# Target deployment environment
+environment = "PPE"
 
-# Initialize the workspace connection
-target_workspace = FabricWorkspace(
-    workspace_id="your-workspace-id",       # Replace with your workspace ID from Step 4
-    repository_directory=repository_directory,
-    item_type_in_scope=["Notebook", "DataPipeline", "Environment"],
-    token_credential=token_credential,
+# Deploy using the configuration file
+deploy_with_config(
+    config_file_path=config_file_path,
+    token_credential=AzureCliCredential(),
+    environment=environment,  # Optional
 )
-
-# Deploy all in-scope items to the target workspace
-publish_all_items(target_workspace)
-
-# Remove items from the workspace that are no longer in the repository
-unpublish_all_orphan_items(target_workspace)
 ```
 
 Replace the placeholder values:
@@ -123,11 +143,14 @@ Replace the placeholder values:
 | Placeholder                | Replace with                                                                               |
 | -------------------------- | ------------------------------------------------------------------------------------------ |
 | `your-workspace-id`        | The workspace ID from Step 4                                                               |
-| `your-workspace-directory` | The folder name containing your Fabric items                                               |
-| `item_type_in_scope` list  | The item types you want to deploy (see [Supported Item Types](../reference/item_types.md)) |
+| `your-workspace-directory` | The folder containing your Fabric items                                                    |
+| `item_types_in_scope` list | The item types you want to deploy (see [Supported Item Types](../reference/item_types.md)) |
 
 !!! tip
-The `item_type_in_scope` parameter controls which item types are deployed. Only items matching these types will be published or unpublished. Start with a small set and expand as needed.
+
+    `item_types_in_scope` controls which item types are published and unpublished. If omitted, all supported item types are in scope.
+
+See [Configuration Deployment](config_deployment.md) for all available configuration options.
 
 ## Step 6: Run the Deployment
 
@@ -139,14 +162,23 @@ python deploy.py
 
 You should see log output indicating each item being published to the target workspace. A successful run looks something like:
 
-```
-INFO - Publishing Hello World.Notebook...
-INFO - Publishing Run Hello World.DataPipeline...
-INFO - Unpublish orphan check complete.
+```text
+[info]   15:40:20 - Loading configuration from config.yml for environment 'DEV'
+[info]   15:40:21 - ########## Publishing Item 11/31: Notebook #############################################
+[info]   15:40:21 - Publishing Notebook 'Hello World'
+         15:40:22 - Published Notebook 'Hello World'
+[info]   15:40:23 - ########## Publishing Item 20/31: DataPipeline #########################################
+[info]   15:40:23 - Publishing DataPipeline 'Run Hello World'
+         15:40:24 - Published DataPipeline 'Run Hello World'
+[info]   15:40:25 - ########## Unpublishing Orphaned Items #################################################
+[info]   15:40:25 - Unpublishing Notebook 'Old Notebook'
+         15:40:26 - Unpublished Notebook 'Old Notebook'
+[info]   15:40:27 - Config-based deployment completed successfully
 ```
 
 !!! warning
-If you see a `CredentialUnavailableError`, run `az login` again — your session may have expired.
+
+    If you see `Failed to acquire Microsoft Entra token`, run `az login` and retry.
 
 ## Step 7: Add Parameter Replacement (Optional)
 
@@ -162,27 +194,50 @@ find_replace:
           PROD: "prod-lakehouse-id"
 ```
 
-Then add the `environment` parameter to your `FabricWorkspace`:
+Then reference it from `config.yml`:
 
-```python
-target_workspace = FabricWorkspace(
-    workspace_id="your-workspace-id",
-    environment="PPE",  # Matches the key in parameter.yml
-    repository_directory=repository_directory,
-    item_type_in_scope=["Notebook", "DataPipeline", "Environment"],
-    token_credential=token_credential,
-)
+```yaml
+core:
+    workspace_id: "your-workspace-id"
+    repository_directory: "your-workspace-directory"
+    parameter: "your-workspace-directory/parameter.yml"
 ```
 
-During deployment, any occurrence of `dev-lakehouse-id` in your item definitions will be replaced with `ppe-lakehouse-id`.
+Set `environment = "PPE"` in `deploy.py`. During deployment, any occurrence of `dev-lakehouse-id` in your item definitions will be replaced with `ppe-lakehouse-id`.
 
 For full details, see the [Parameterization](parameterization.md) guide.
+
+## Alternative: Programmatic Deployment
+
+If you prefer to define and run the deployment directly in Python instead of using a YAML configuration file:
+
+```python
+from pathlib import Path
+
+from azure.identity import AzureCliCredential
+from fabric_cicd import FabricWorkspace, publish_all_items, unpublish_all_orphan_items
+
+repository_directory = str(Path(__file__).resolve().parent / "your-workspace-directory")
+environment = "PPE"
+
+target_workspace = FabricWorkspace(
+    workspace_id="your-workspace-id",  # Alternatively, use workspace_name="your-workspace-name"
+    repository_directory=repository_directory,
+    token_credential=AzureCliCredential(),
+    environment=environment,  # Optional
+    item_type_in_scope=["Notebook", "DataPipeline", "Environment"],  # Optional
+)
+
+publish_all_items(target_workspace)
+unpublish_all_orphan_items(target_workspace)
+```
 
 ## What's Next?
 
 Now that you have a working local deployment, here are the recommended next steps:
 
-- **Automate with CI/CD** — Integrate your script into a [release pipeline](../example/release_pipeline.md) using GitHub Actions or Azure DevOps
-- **Add parameterization** — Configure environment-specific values with [parameter.yml](parameterization.md)
-- **Understand the philosophy** — Read about [full deployments vs. diffs](deployment_philosophy.md) to understand how fabric-cicd manages workspace state
+- **Understand the philosophy** — Learn why fabric-cicd uses [full deployments instead of diffs](deployment_overview.md#deployment-philosophy).
 - **Explore authentication options** — Review [authentication examples](../example/authentication.md) for service principals, managed identities, and Fabric Notebooks
+- **Explore optional features** — Learn about [feature flags](optional_feature.md#feature-flags), [selective deployment](optional_feature.md#selective-deployment-features), and [bulk publish](optional_feature.md#bulk-publish)
+- **Troubleshoot deployments** — Follow the [debugging and troubleshooting guidance](troubleshooting.md#debugging-deployments) for logging, common errors, and diagnostic scripts
+- **Automate with CI/CD** — Integrate your script into a [release pipeline](../example/release_pipeline.md) using GitHub Actions or Azure DevOps
