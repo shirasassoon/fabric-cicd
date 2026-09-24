@@ -6,7 +6,7 @@ This step-by-step tutorial walks you through your first deployment with fabric-c
 
 Before you begin, make sure you have the following:
 
-- **Python 3.9 or later** installed ([download](https://www.python.org/downloads/))
+- **A supported Python version** installed (see [supported versions](../index.md#installation) and [download Python](https://www.python.org/downloads/))
 - **Azure CLI** installed and logged in ([install guide](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli))
 - **A Microsoft Fabric workspace** with at least one item (e.g., a Notebook or Data Pipeline)
 - **Git Source Control** configured on a development workspace ([setup guide](https://learn.microsoft.com/en-us/fabric/cicd/git-integration/git-get-started))
