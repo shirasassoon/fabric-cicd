@@ -8,6 +8,10 @@ To install fabric-cicd, run:
 pip install fabric-cicd
 ```
 
+!!! tip "Prefer a command-line experience over writing Python?"
+
+    If you'd rather not write Python, the [Microsoft Fabric CLI](https://microsoft.github.io/fabric-cli/) (`fab`) includes a [`deploy` command](https://microsoft.github.io/fabric-cli/commands/fs/deploy/) that runs fabric-cicd under the hood. It deploys Fabric items to a workspace directly from the command line using a shared `config.yml` file. See [Deploying with the Fabric CLI](config_deployment.md#deploying-with-the-fabric-cli) for details.
+
 ## Authentication
 
 > **⚠️ NOTICE**: Due to security best practices, the **Default Credential** (`DefaultAzureCredential` fallback) and **implicit Fabric Notebook authentication** (without a `token_credential` parameter) methods are no longer supported. `token_credential` is now a required parameter.
@@ -59,7 +63,7 @@ This library deploys from a directory containing files and directories committed
 
 ## Next steps
 
-- Review the recommended [Git flow](git_flow.md) for fabric-cicd deployments.
+- Review the recommended [Git flow](deployment_overview.md#git-flow) and [deployment philosophy](deployment_overview.md#deployment-philosophy) for fabric-cicd deployments.
 - Configure deployment behavior with [Configuration Deployment](config_deployment.md).
 - Learn how to manage environment-specific values with [Parameterization](parameterization.md).
 - See [Authentication Examples](../example/authentication.md) for local and pipeline authentication patterns.
