@@ -38,7 +38,8 @@ Your repository should contain a directory structure like this, where each folde
 ```
 
 !!! tip
-The directory names follow the pattern `<item-name>.<item-type>`. These are created automatically when you commit items through the Fabric Source Control UI.
+
+    The directory names follow the pattern `<item-name>.<item-type>`. These are created automatically when you commit items through the Fabric Source Control UI.
 
 ## Step 2: Install fabric-cicd
 
@@ -163,7 +164,7 @@ python deploy.py
 You should see log output indicating each item being published to the target workspace. A successful run looks something like:
 
 ```text
-[info]   15:40:20 - Loading configuration from config.yml for environment 'DEV'
+[info]   15:40:20 - Loading configuration from config.yml for environment 'PPE'
 [info]   15:40:21 - ########## Publishing Item 11/31: Notebook #############################################
 [info]   15:40:21 - Publishing Notebook 'Hello World'
          15:40:22 - Published Notebook 'Hello World'
