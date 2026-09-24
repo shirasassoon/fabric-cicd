@@ -225,7 +225,6 @@ SENSITIVE_RESPONSE_HEADERS = frozenset({
 
 # Publish
 SHELL_ONLY_PUBLISH = [
-    ItemType.LAKEHOUSE.value,
     ItemType.WAREHOUSE.value,
     ItemType.SQL_DATABASE.value,
     ItemType.ML_EXPERIMENT.value,
@@ -243,12 +242,15 @@ EXCLUDE_PATH_REGEX_MAPPING = {
     ItemType.REPORT.value: r".*\.pbi[/\\].*",
     ItemType.SEMANTIC_MODEL.value: r".*\.pbi[/\\].*",
     ItemType.EVENTHOUSE.value: r".*\.children[/\\].*",
+    # Shortcuts are deployed separately via the OneLake Shortcuts API, not as part of the Lakehouse definition
+    ItemType.LAKEHOUSE.value: r"(?i).*shortcuts\.metadata\.json$",
 }
 
 # API Format Mapping for item types that require specific API formats
 API_FORMAT_MAPPING = {
     ItemType.SPARK_JOB_DEFINITION.value: "SparkJobDefinitionV2",
     ItemType.NOTEBOOK.value: "ipynb",
+    ItemType.LAKEHOUSE.value: "LakehouseDefinitionV1",
 }
 
 # REGEX Constants

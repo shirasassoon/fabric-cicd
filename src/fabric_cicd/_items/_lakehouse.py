@@ -14,7 +14,7 @@ from fabric_cicd._common._fabric_endpoint import handle_retry
 from fabric_cicd._common._item import Item
 from fabric_cicd._common._logging import log_header
 from fabric_cicd._items._base_publisher import ItemPublisher, Publisher
-from fabric_cicd.constants import FeatureFlag, ItemType
+from fabric_cicd.constants import API_FORMAT_MAPPING, EXCLUDE_PATH_REGEX_MAPPING, FeatureFlag, ItemType
 
 logger = logging.getLogger(__name__)
 
@@ -104,19 +104,12 @@ class LakehousePublisher(ItemPublisher):
 
     def publish_one(self, item_name: str, item: Item) -> None:
         """Publish a single Lakehouse item."""
-        creation_payload = next(
-            (
-                {"enableSchemas": True}
-                for file in item.item_files
-                if file.name == "lakehouse.metadata.json" and "defaultSchema" in file.contents
-            ),
-            None,
-        )
-
+        # Shortcuts are excluded from the definition and deployed separately via post_publish_all()
         self.fabric_workspace_obj._publish_item(
             item_name=item_name,
             item_type=self.item_type,
-            creation_payload=creation_payload,
+            exclude_path=EXCLUDE_PATH_REGEX_MAPPING.get(self.item_type),
+            api_format=API_FORMAT_MAPPING.get(self.item_type),
             skip_publish_logging=True,
         )
 
