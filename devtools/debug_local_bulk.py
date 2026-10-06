@@ -34,8 +34,14 @@ environment = "PPE"
 # In this example, our workspace content sits within the root/sample/workspace directory
 repository_directory = str(root_directory / "sample" / "workspace")
 
-# Deploy every item type supported by bulk publishing
-item_type_in_scope = list(constants.BULK_ACCEPTED_ITEM_TYPES)
+# Deploy every bulk-supported item type except the explicitly excluded types
+excluded_item_types = {
+    constants.ItemType.SPARK_JOB_DEFINITION.value,
+    constants.ItemType.SQL_DATABASE.value,
+}
+item_type_in_scope = [
+    item_type for item_type in constants.BULK_ACCEPTED_ITEM_TYPES if item_type not in excluded_item_types
+]
 
 # Azure CLI auth - comment out to use a different auth method
 token_credential = AzureCliCredential()
