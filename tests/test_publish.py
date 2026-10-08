@@ -16,9 +16,10 @@ from fixtures.credentials import DummyTokenCredential
 import fabric_cicd.publish as publish
 from fabric_cicd import constants
 from fabric_cicd._common._exceptions import InputError
+from fabric_cicd._items._lakehouse import LakehousePublisher
 from fabric_cicd._items._notebook import NotebookPublisher
 from fabric_cicd._items._paginatedreport import PaginatedReportPublisher
-from fabric_cicd.constants import API_FORMAT_MAPPING, ItemType
+from fabric_cicd.constants import API_FORMAT_MAPPING, EXCLUDE_PATH_REGEX_MAPPING, ItemType
 from fabric_cicd.fabric_workspace import FabricWorkspace
 
 # =============================================================================
@@ -1221,6 +1222,70 @@ class TestNotebookPublisher:
         assert mock_item.item_files[1].file_path.name == "notebook.py"
         assert mock_item.item_files[2].file_path.name == "readme.md"
         assert mock_item.item_files[3].file_path.name == "notebook.json"
+
+
+# =============================================================================
+# LakehousePublisher Tests
+# =============================================================================
+
+
+class TestLakehousePublisher:
+    """Tests for LakehousePublisher.publish_one method."""
+
+    @pytest.fixture
+    def mock_workspace(self):
+        """Create a mock FabricWorkspace object."""
+        workspace = MagicMock()
+        workspace._publish_item = MagicMock()
+        return workspace
+
+    @pytest.fixture
+    def publisher(self, mock_workspace):
+        """Create a LakehousePublisher instance."""
+        publisher = LakehousePublisher.__new__(LakehousePublisher)
+        publisher.fabric_workspace_obj = mock_workspace
+        return publisher
+
+    def test_publish_one_full_definition(self, publisher, mock_workspace):
+        """Test that a Lakehouse is published as a full definition with the correct format and shortcut exclusion."""
+        mock_item = MagicMock()
+        mock_item.skip_publish = True  # short-circuit post-publish SQL endpoint check
+
+        publisher.publish_one("test_lakehouse", mock_item)
+
+        mock_workspace._publish_item.assert_called_once_with(
+            item_name="test_lakehouse",
+            item_type=ItemType.LAKEHOUSE.value,
+            exclude_path=EXCLUDE_PATH_REGEX_MAPPING.get(ItemType.LAKEHOUSE.value),
+            api_format=API_FORMAT_MAPPING.get(ItemType.LAKEHOUSE.value),
+            skip_publish_logging=True,
+        )
+
+    def test_publish_one_no_creation_payload(self, publisher, mock_workspace):
+        """Test that publish_one no longer passes a shell-only creation_payload."""
+        mock_item = MagicMock()
+        mock_item.skip_publish = True
+
+        publisher.publish_one("test_lakehouse", mock_item)
+
+        _, kwargs = mock_workspace._publish_item.call_args
+        assert "creation_payload" not in kwargs
+
+    def test_lakehouse_api_format_is_definition_v1(self):
+        """Test that the Lakehouse API format is registered as LakehouseDefinitionV1."""
+        assert API_FORMAT_MAPPING.get(ItemType.LAKEHOUSE.value) == "LakehouseDefinitionV1"
+
+    def test_lakehouse_not_shell_only(self):
+        """Test that Lakehouse is no longer treated as a shell-only publish item type."""
+        assert ItemType.LAKEHOUSE.value not in constants.SHELL_ONLY_PUBLISH
+
+    def test_lakehouse_excludes_shortcuts_from_definition(self):
+        """Test that shortcuts.metadata.json is excluded from the Lakehouse definition."""
+        import re
+
+        pattern = EXCLUDE_PATH_REGEX_MAPPING.get(ItemType.LAKEHOUSE.value)
+        assert re.match(pattern, "shortcuts.metadata.json")
+        assert not re.match(pattern, "lakehouse.metadata.json")
 
 
 # =============================================================================
