@@ -240,7 +240,8 @@ class FabricWorkspace:
             return ""
 
         # Create a cache key for this request
-        cache_key = (workspace_id, item_type, item_guid, item_name, attribute_name)
+        cache_key_prefix = (workspace_id, item_type, item_guid, item_name)
+        cache_key = (*cache_key_prefix, attribute_name)
 
         # Check if result is already cached
         with self._item_attribute_cache_lock:
@@ -280,6 +281,17 @@ class FabricWorkspace:
                 return ""
             raise InputError(msg, logger)
 
+        # Special handling for SQL Database attributes that require additional processing
+        if item_type == ItemType.SQL_DATABASE.value and attribute_name in {"sqlendpoint", "sqlendpointfqdn"}:
+            sql_endpoint = attribute_value
+            sql_endpoint_fqdn = sql_endpoint.split(",", 1)[0]
+            with self._item_attribute_cache_lock:
+                self._item_attribute_cache.update({
+                    (*cache_key_prefix, "sqlendpoint"): sql_endpoint,
+                    (*cache_key_prefix, "sqlendpointfqdn"): sql_endpoint_fqdn,
+                })
+            return sql_endpoint if attribute_name == "sqlendpoint" else sql_endpoint_fqdn
+
         # Cache the result before returning
         with self._item_attribute_cache_lock:
             self._item_attribute_cache[cache_key] = attribute_value
@@ -291,7 +303,7 @@ class FabricWorkspace:
         """
         Poll an item until an asynchronously provisioned attribute becomes available.
 
-        SQL endpoints (`sqlendpoint` / `sqlendpointid`) and the Eventhouse query URI
+        SQL endpoints (`sqlendpoint` / `sqlendpointfqdn` / `sqlendpointid`) and the Eventhouse query URI
         (`queryserviceuri`) are provisioned asynchronously after the item is created, so a
         freshly deployed item may not expose them immediately. Serial publishing waits for this
         via `check_sqlendpoint_provision_status`; staged bulk publishing calls this method
@@ -510,6 +522,7 @@ class FabricWorkspace:
             sql_endpoint = ""
             sql_endpoint_id = ""
             query_service_uri = ""
+            sql_endpoint_fqdn = ""
 
             # Add an empty dictionary if the item type hasn't been added yet
             if item_type not in self.deployed_items:
@@ -533,6 +546,10 @@ class FabricWorkspace:
                     sql_endpoint_id = self._get_item_attribute(
                         self.workspace_id, item_type, item_guid, item_name, "sqlendpointid", required=False
                     )
+                    if item_type == ItemType.SQL_DATABASE.value:
+                        sql_endpoint_fqdn = self._get_item_attribute(
+                            self.workspace_id, item_type, item_guid, item_name, "sqlendpointfqdn", required=False
+                        )
                 if item_type in [ItemType.EVENTHOUSE.value]:
                     query_service_uri = self._get_item_attribute(
                         self.workspace_id, item_type, item_guid, item_name, "queryserviceuri", required=False
@@ -551,6 +568,7 @@ class FabricWorkspace:
             self.workspace_items[item_type][item_name] = {
                 "id": item_guid,
                 "sqlendpoint": sql_endpoint,
+                "sqlendpointfqdn": sql_endpoint_fqdn,
                 "sqlendpointid": sql_endpoint_id,
                 "queryserviceuri": query_service_uri,
             }
@@ -735,6 +753,7 @@ class FabricWorkspace:
         item_type: str,
         exclude_path: str = r"^(?!.*)",
         func_process_file: Optional[callable] = None,
+        options: Optional[dict] = None,
         **kwargs,
     ) -> None:
         """
@@ -745,6 +764,7 @@ class FabricWorkspace:
             item_type: Type of the item (e.g., Notebook, Environment).
             exclude_path: Regex string of paths to exclude. Defaults to r"^(?!.*)".
             func_process_file: Custom function to process file contents. Defaults to None.
+            options: Dictionary of additional options for the update definition operation (e.g., {"allowPurgeData": True}). Defaults to None.
             **kwargs: Additional keyword arguments.
         """
         item = self.repository_items[item_type][item_name]
@@ -814,10 +834,11 @@ class FabricWorkspace:
         elif is_deployed and not shell_only_publish:
             # Update the item's definition if full publish is required
             # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/update-item-definition
+            update_body = {**definition_body, "options": options} if options is not None else definition_body
             update_response = self.endpoint.invoke(
                 method="POST",
                 url=f"{self.base_api_url}/items/{item_guid}/updateDefinition?updateMetadata=True",
-                body=definition_body,
+                body=update_body,
             )
             api_response = update_response
         elif is_deployed and shell_only_publish:
@@ -880,11 +901,20 @@ class FabricWorkspace:
         """
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []
+        item_options_by_logical_id = []
         for _item_name, item, publisher in items_with_context:
             item_parts = self._prepare_bulk_item_parts(item, publisher)
             definition_parts.extend(item_parts)
 
+            opts = publisher.get_definition_options(item)
+            if opts:
+                item_options_by_logical_id.append({"logicalId": item.logical_id, "options": opts})
+
         logger.info(f"Publishing {len(items_with_context)} item(s) in bulk")
+
+        options = {"allowPairingByName": True}
+        if item_options_by_logical_id:
+            options["itemOptionsByLogicalId"] = item_options_by_logical_id
 
         # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions
         response = self.endpoint.invoke(
@@ -892,7 +922,7 @@ class FabricWorkspace:
             url=f"{self.base_api_url}/items/bulkImportDefinitions",
             body={
                 "definitionParts": definition_parts,
-                "options": {"allowPairingByName": True},
+                "options": options,
             },
             max_duration=1800,  # 30 minutes, as bulk operations can take longer time to complete
         )

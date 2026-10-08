@@ -157,6 +157,8 @@ class FeatureFlag(str, Enum):
     """Set to enable hard deletion of items, bypassing the workspace recycle bin."""
     ENABLE_BULK_PUBLISH = "enable_bulk_publish"
     """Set to enable publishing of items using the bulk import API."""
+    ENABLE_PURGE_DATA = "enable_purge_data"
+    """Set to allow purging a Semantic Model's existing data when applying a definition update."""
 
 
 class OperationType(str, Enum):
@@ -286,6 +288,7 @@ PROPERTY_PATH_ATTR_MAPPING = {
     },
     ItemType.SQL_DATABASE.value: {
         "sqlendpoint": "body/properties/serverFqdn",
+        "sqlendpointfqdn": "body/properties/serverFqdn",
     },
     ItemType.EVENTHOUSE.value: {
         "queryserviceuri": "body/properties/queryServiceUri",
@@ -293,14 +296,14 @@ PROPERTY_PATH_ATTR_MAPPING = {
 }
 
 # Attributes that require waits between publish tiers. Excludes immediately available "id".
-ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointid", "queryserviceuri"})
+ASYNC_PROVISIONED_ATTRIBUTES = frozenset({"sqlendpoint", "sqlendpointfqdn", "sqlendpointid", "queryserviceuri"})
 
 # Parameter file configs
 PARAMETER_FILE_NAME = "parameter.yml"
 # Parameters to validate
 PARAM_NAMES = ["find_replace", "key_value_replace", "spark_pool", "semantic_model_binding"]
 
-ITEM_ATTR_LOOKUP = ["id", "sqlendpoint", "sqlendpointid", "queryserviceuri"]
+ITEM_ATTR_LOOKUP = ["id", "sqlendpoint", "sqlendpointfqdn", "sqlendpointid", "queryserviceuri"]
 ITEM_VARIABLE_PREFIX = "$items."
 WORKSPACE_VARIABLE_PREFIX = "$workspace."
 ENVIRONMENT_VARIABLE_PREFIX = "$ENV:"
