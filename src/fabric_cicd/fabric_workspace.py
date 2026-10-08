@@ -753,6 +753,7 @@ class FabricWorkspace:
         item_type: str,
         exclude_path: str = r"^(?!.*)",
         func_process_file: Optional[callable] = None,
+        options: Optional[dict] = None,
         **kwargs,
     ) -> None:
         """
@@ -763,6 +764,7 @@ class FabricWorkspace:
             item_type: Type of the item (e.g., Notebook, Environment).
             exclude_path: Regex string of paths to exclude. Defaults to r"^(?!.*)".
             func_process_file: Custom function to process file contents. Defaults to None.
+            options: Dictionary of additional options for the update definition operation (e.g., {"allowPurgeData": True}). Defaults to None.
             **kwargs: Additional keyword arguments.
         """
         item = self.repository_items[item_type][item_name]
@@ -832,10 +834,11 @@ class FabricWorkspace:
         elif is_deployed and not shell_only_publish:
             # Update the item's definition if full publish is required
             # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/update-item-definition
+            update_body = {**definition_body, "options": options} if options is not None else definition_body
             update_response = self.endpoint.invoke(
                 method="POST",
                 url=f"{self.base_api_url}/items/{item_guid}/updateDefinition?updateMetadata=True",
-                body=definition_body,
+                body=update_body,
             )
             api_response = update_response
         elif is_deployed and shell_only_publish:
@@ -898,11 +901,20 @@ class FabricWorkspace:
         """
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []
+        item_options_by_logical_id = []
         for _item_name, item, publisher in items_with_context:
             item_parts = self._prepare_bulk_item_parts(item, publisher)
             definition_parts.extend(item_parts)
 
+            opts = publisher.get_definition_options(item)
+            if opts:
+                item_options_by_logical_id.append({"logicalId": item.logical_id, "options": opts})
+
         logger.info(f"Publishing {len(items_with_context)} item(s) in bulk")
+
+        options = {"allowPairingByName": True}
+        if item_options_by_logical_id:
+            options["itemOptionsByLogicalId"] = item_options_by_logical_id
 
         # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions
         response = self.endpoint.invoke(
@@ -910,7 +922,7 @@ class FabricWorkspace:
             url=f"{self.base_api_url}/items/bulkImportDefinitions",
             body={
                 "definitionParts": definition_parts,
-                "options": {"allowPairingByName": True},
+                "options": options,
             },
             max_duration=1800,  # 30 minutes, as bulk operations can take longer time to complete
         )
