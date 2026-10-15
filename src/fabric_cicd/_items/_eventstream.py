@@ -50,12 +50,14 @@ def _resume_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str,
 
 
 @contextmanager
-def _paused_eventstream_sources(fabric_workspace_obj: FabricWorkspace, items: list[Item]) -> Generator[None, None, None]:
+def _paused_eventstream_sources(
+    fabric_workspace_obj: FabricWorkspace, items: list[Item]
+) -> Generator[None, None, None]:
     """
     Pause the running sources of the given deployed eventstreams for the duration of the publish, then resume them.
 
-    This is the single source of truth for the pause/resume flow, shared by the single-item
-    (publish_one) and bulk (publish_batch_context) publish paths. It is a no-op unless the
+    This is the single source of truth for the pause/resume flow, applied by both publish paths
+    through EventstreamPublisher.publish_items_context. It is a no-op unless the
     enable_eventstream_source_pause feature flag is set. Eventstreams that are not yet deployed
     (no GUID) are skipped, as they have no running sources. Sources are always resumed via a
     finally block, so a failed publish can never leave them paused.
@@ -84,11 +86,6 @@ class EventstreamPublisher(ItemPublisher):
 
     item_type = ItemType.EVENTSTREAM.value
 
-    def publish_one(self, item_name: str, item: Item) -> None:
-        """Publish a single Eventstream item, pausing its running sources when the feature flag is set."""
-        with _paused_eventstream_sources(self.fabric_workspace_obj, [item]):
-            self.fabric_workspace_obj._publish_item(item_name=item_name, item_type=self.item_type)
-
-    def publish_batch_context(self, items: list[Item]) -> AbstractContextManager[None]:
-        """Pause/resume the batch's eventstream sources around the bulk publish (see _paused_eventstream_sources)."""
+    def publish_items_context(self, items: list[Item]) -> AbstractContextManager[None]:
+        """Pause/resume the eventstreams' running sources around their publish (see _paused_eventstream_sources)."""
         return _paused_eventstream_sources(self.fabric_workspace_obj, items)

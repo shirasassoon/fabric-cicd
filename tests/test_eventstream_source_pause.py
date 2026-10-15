@@ -9,6 +9,7 @@ import pytest
 
 from fabric_cicd import constants, get_supported_feature_flags
 from fabric_cicd._common._item import Item
+from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd._items._eventstream import EventstreamPublisher
 from fabric_cicd.constants import FeatureFlag, ItemType
 
@@ -29,17 +30,15 @@ def _make_item(guid: str = EVENTSTREAM_GUID) -> Item:
     return Item(type=ItemType.EVENTSTREAM.value, name="MyEventstream", description="", guid=guid)
 
 
-def _make_publisher(publish_side_effect=None, topology_sources=None):
+def _make_publisher(topology_sources=None):
     """
     Create an EventstreamPublisher with a mocked FabricWorkspace.
 
     Args:
-        publish_side_effect: side_effect assigned to the mocked ``_publish_item``.
         topology_sources: list of source dicts returned by the mocked topology GET.
     """
     workspace = MagicMock()
     workspace.base_api_url = f"https://api.example.com/v1/workspaces/{EVENTSTREAM_GUID}"
-    workspace._publish_item = MagicMock(side_effect=publish_side_effect)
 
     sources = topology_sources if topology_sources is not None else []
 
@@ -56,13 +55,15 @@ def _make_publisher(publish_side_effect=None, topology_sources=None):
     return publisher, workspace
 
 
-def test_flag_off_calls_publish_item_only():
-    """Without the flag, publish_one just delegates to _publish_item and makes no API calls."""
-    publisher, workspace = _make_publisher()
+def test_flag_off_is_noop():
+    """Without the flag, the context makes no API calls (publish behavior unchanged)."""
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
 
-    publisher.publish_one("MyEventstream", _make_item())
+    with publisher.publish_items_context([_make_item()]):
+        pass
 
-    workspace._publish_item.assert_called_once_with(item_name="MyEventstream", item_type=ItemType.EVENTSTREAM.value)
     workspace.endpoint.invoke.assert_not_called()
 
 
@@ -73,9 +74,9 @@ def test_flag_on_no_running_sources_updates_without_pause():
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Stopped"}],
     )
 
-    publisher.publish_one("MyEventstream", _make_item())
+    with publisher.publish_items_context([_make_item()]):
+        pass
 
-    workspace._publish_item.assert_called_once()
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
     assert any(url.endswith("/topology") for url in urls)
     assert not any("/pause" in url for url in urls)
@@ -83,15 +84,17 @@ def test_flag_on_no_running_sources_updates_without_pause():
 
 
 def test_flag_on_pauses_running_sources_then_resumes():
-    """With the flag, running sources are paused before the update and resumed afterward."""
+    """With the flag, running sources are paused on enter and resumed on exit."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     publisher, workspace = _make_publisher(
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
     )
 
-    publisher.publish_one("MyEventstream", _make_item())
-
-    workspace._publish_item.assert_called_once()
+    with publisher.publish_items_context([_make_item()]):
+        # Inside the context the source is paused but not yet resumed.
+        urls_inside = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+        assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls_inside)
+        assert not any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls_inside)
 
     invoke_calls = workspace.endpoint.invoke.call_args_list
     urls = [call.kwargs["url"] for call in invoke_calls]
@@ -116,7 +119,8 @@ def test_flag_on_only_running_sources_are_paused():
         ],
     )
 
-    publisher.publish_one("MyEventstream", _make_item())
+    with publisher.publish_items_context([_make_item()]):
+        pass
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
     assert any(url.endswith("/sources/running-1/pause") for url in urls)
@@ -124,16 +128,16 @@ def test_flag_on_only_running_sources_are_paused():
     assert any(url.endswith("/sources/running-1/resume") for url in urls)
 
 
-def test_flag_on_update_fails_sources_are_still_resumed():
-    """When the definition update fails, paused sources are still resumed (finally path)."""
+def test_flag_on_publish_fails_sources_are_still_resumed():
+    """When the publish fails inside the context, paused sources are still resumed (finally path)."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     publisher, workspace = _make_publisher(
-        publish_side_effect=Exception("Operation failed. Error Code: SomethingElse."),
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
     )
 
-    with pytest.raises(Exception, match="SomethingElse"):
-        publisher.publish_one("MyEventstream", _make_item())
+    publish_error = Exception("Operation failed. Error Code: SomethingElse.")
+    with pytest.raises(Exception, match="SomethingElse"), publisher.publish_items_context([_make_item()]):
+        raise publish_error
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
     assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls)
@@ -143,75 +147,30 @@ def test_flag_on_update_fails_sources_are_still_resumed():
 def test_flag_on_new_eventstream_without_guid_skips_pause():
     """A brand-new eventstream (no GUID) is published directly without any topology/pause calls."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
-    publisher, workspace = _make_publisher()
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
 
-    publisher.publish_one("MyEventstream", _make_item(guid=""))
+    with publisher.publish_items_context([_make_item(guid="")]):
+        pass
 
-    workspace._publish_item.assert_called_once()
+    workspace.endpoint.invoke.assert_not_called()
+
+
+def test_base_publish_items_context_is_noop():
+    """The base hook is a no-op context manager so other item types are unaffected."""
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+
+    # Invoke the base implementation directly (bypassing the Eventstream override).
+    with ItemPublisher.publish_items_context(publisher, [_make_item()]):
+        pass
+
     workspace.endpoint.invoke.assert_not_called()
 
 
 def test_flag_in_supported_feature_flags():
     """The new flag is exposed via get_supported_feature_flags()."""
     assert FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value in get_supported_feature_flags()
-
-
-# --- Bulk publish path (publish_batch_context) ---------------------------------------------------
-
-
-def test_batch_context_flag_off_is_noop():
-    """Without the flag, the batch context makes no API calls (bulk path unchanged)."""
-    publisher, workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-
-    with publisher.publish_batch_context([_make_item()]):
-        pass
-
-    workspace.endpoint.invoke.assert_not_called()
-
-
-def test_batch_context_pauses_on_enter_and_resumes_on_exit():
-    """With the flag, running sources are paused on enter and only resumed on exit."""
-    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
-    publisher, workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-
-    with publisher.publish_batch_context([_make_item()]):
-        # Inside the context the source is paused but not yet resumed.
-        urls_inside = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
-        assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls_inside)
-        assert not any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls_inside)
-
-    urls_after = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
-    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls_after)
-
-
-def test_batch_context_resumes_when_bulk_publish_fails():
-    """A failure inside the batch context still resumes paused sources (finally path)."""
-    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
-    publisher, workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-
-    bulk_error = Exception("bulk boom")
-    with pytest.raises(Exception, match="bulk boom"), publisher.publish_batch_context([_make_item()]):
-        raise bulk_error
-
-    urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
-    assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls)
-    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
-
-
-def test_batch_context_skips_new_eventstream_without_guid():
-    """Eventstreams without a GUID (not yet deployed) are skipped in the bulk path."""
-    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
-    publisher, workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-
-    with publisher.publish_batch_context([_make_item(guid="")]):
-        pass
-
-    workspace.endpoint.invoke.assert_not_called()

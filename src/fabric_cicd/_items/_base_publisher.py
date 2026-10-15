@@ -389,7 +389,7 @@ class ItemPublisher(Publisher):
                         [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
-                # Enter each publisher's batch context (e.g. pausing eventstream sources) around the
+                # Enter each publisher's items context (e.g. pausing eventstream sources) around the
                 # bulk publish so per-type setup/teardown applies to the bulk path as well.
                 items_by_publisher: dict[ItemPublisher, list[Item]] = {}
                 for _item_name, item, publisher in batch_items:
@@ -397,7 +397,7 @@ class ItemPublisher(Publisher):
 
                 with ExitStack() as batch_stack:
                     for publisher, publisher_items in items_by_publisher.items():
-                        batch_stack.enter_context(publisher.publish_batch_context(publisher_items))
+                        batch_stack.enter_context(publisher.publish_items_context(publisher_items))
 
                     fabric_workspace_obj._publish_items(
                         batch_items, skipped_items=skipped_items if batch_index == 0 else None
@@ -464,13 +464,14 @@ class ItemPublisher(Publisher):
 
         config = getattr(self.__class__, "parallel_config", ParallelConfig())
 
-        if config.ordered_items_func is not None:
-            order = config.ordered_items_func(self)
-            errors = self._publish_items_ordered(items, order)
-        elif config.enabled:
-            errors = self._publish_items_parallel(items)
-        else:
-            errors = self._publish_items_sequential(items)
+        with self.publish_items_context(list(items.values())):
+            if config.ordered_items_func is not None:
+                order = config.ordered_items_func(self)
+                errors = self._publish_items_ordered(items, order)
+            elif config.enabled:
+                errors = self._publish_items_parallel(items)
+            else:
+                errors = self._publish_items_sequential(items)
 
         self.post_publish_all()
 
@@ -568,17 +569,21 @@ class ItemPublisher(Publisher):
         """
         pass
 
-    def publish_batch_context(self, items: list["Item"]) -> AbstractContextManager[None]:  # noqa: ARG002
+    def publish_items_context(self, items: list["Item"]) -> AbstractContextManager[None]:  # noqa: ARG002
         """
-        Return a context manager wrapping the bulk publish of this type's items within a batch.
+        Return a context manager wrapping the publish of this type's items.
 
-        The default is a no-op. Subclasses can override to set up and tear down external state
-        around the bulk import API call for their items (e.g. pausing resources before the
-        update and resuming them afterward). This is the bulk-publish counterpart to overriding
-        publish_one() in the one-at-a-time path.
+        The default is a no-op. Subclasses can override to set up and tear down external
+        state around the publish of their items (e.g. pausing resources before the update
+        and resuming them afterward), with a guaranteed teardown even if the publish fails.
+
+        This single hook is applied by both publish paths: once around the whole item set in
+        publish_all() (one-at-a-time path) and once per publisher per batch in
+        publish_all_bulk() (bulk path). It is the failure-safe counterpart to the
+        pre_publish_all()/post_publish_all() lifecycle hooks, which are skipped on a bulk failure.
 
         Args:
-            items: The Item objects of this type being published in the current batch.
+            items: The Item objects of this type being published.
         """
         return nullcontext()
 
