@@ -14,13 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 def _get_running_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str) -> list[dict]:
-    """
-    Return every currently running source in the eventstream's topology.
-
-    Args:
-        fabric_workspace_obj: The FabricWorkspace object.
-        eventstream_guid: The GUID of the deployed eventstream.
-    """
+    """Return every currently running source in the eventstream's topology."""
     # https://learn.microsoft.com/en-us/rest/api/fabric/eventstream/topology/get-eventstream-topology
     response = fabric_workspace_obj.endpoint.invoke(
         method="GET",
@@ -31,14 +25,7 @@ def _get_running_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid
 
 
 def _pause_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, source: dict) -> None:
-    """
-    Pause a single eventstream source.
-
-    Args:
-        fabric_workspace_obj: The FabricWorkspace object.
-        eventstream_guid: The GUID of the deployed eventstream.
-        source: The source definition (requires an ``id``, optional ``name``).
-    """
+    """Pause a single eventstream source."""
     source_name = source.get("name", source["id"])
     logger.info(f"{constants.INDENT}Pausing Eventstream source '{source_name}'")
     # https://learn.microsoft.com/en-us/rest/api/fabric/eventstream/topology/pause-eventstream-source
@@ -49,14 +36,7 @@ def _pause_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, 
 
 
 def _resume_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, source: dict) -> None:
-    """
-    Resume a single eventstream source from where it was last stopped.
-
-    Args:
-        fabric_workspace_obj: The FabricWorkspace object.
-        eventstream_guid: The GUID of the deployed eventstream.
-        source: The source definition (requires an ``id``, optional ``name``).
-    """
+    """Resume a single eventstream source from where it was last stopped."""
     source_name = source.get("name", source["id"])
     logger.info(f"{constants.INDENT}Resuming Eventstream source '{source_name}'")
     # https://learn.microsoft.com/en-us/rest/api/fabric/eventstream/topology/resume-eventstream-source
@@ -73,34 +53,21 @@ class EventstreamPublisher(ItemPublisher):
     item_type = ItemType.EVENTSTREAM.value
 
     def publish_one(self, item_name: str, item: Item) -> None:
-        """
-        Publish a single Eventstream item.
-
-        By default this behaves exactly like the base publisher. When the
-        ``enable_eventstream_source_pause`` feature flag is set and the eventstream is
-        already deployed, its running sources are paused before the definition update and
-        resumed afterward. This is required when a source is bound to a datasource behind a
-        private endpoint, which Fabric otherwise rejects with a DataSourcesValidationError.
-        Sources are always resumed via a ``finally`` block so a failed update cannot leave
-        them paused.
-
-        Args:
-            item_name: The name of the item to publish.
-            item: The Item object to publish.
-        """
-        # A missing GUID means the eventstream has no deployed topology yet (create path),
-        # so there are no running sources to pause.
+        """Publish a single Eventstream item."""
+        # A missing GUID means the eventstream has not been deployed yet (create), so there are no running sources to pause
         if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG or not item.guid:
             self.fabric_workspace_obj._publish_item(item_name=item_name, item_type=self.item_type)
             return
 
         paused_sources = []
         try:
+            # Pause all currently running sources before publishing the eventstream item
             for source in _get_running_sources(self.fabric_workspace_obj, item.guid):
                 _pause_source(self.fabric_workspace_obj, item.guid, source)
                 paused_sources.append(source)
-
+            # Publish the eventstream item while all previously running sources are paused
             self.fabric_workspace_obj._publish_item(item_name=item_name, item_type=self.item_type)
         finally:
+            # Resume all previously paused sources after publishing the eventstream item
             for source in paused_sources:
                 _resume_source(self.fabric_workspace_obj, item.guid, source)

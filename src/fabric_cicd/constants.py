@@ -160,10 +160,7 @@ class FeatureFlag(str, Enum):
     ENABLE_PURGE_DATA = "enable_purge_data"
     """Set to allow purging a Semantic Model's existing data when applying a definition update."""
     ENABLE_EVENTSTREAM_SOURCE_PAUSE = "enable_eventstream_source_pause"
-    """Set to pause an Eventstream's running sources before applying a definition update and resume them afterward.
-
-    Required when a source is bound to a datasource behind a private endpoint, which Fabric otherwise rejects with a
-    DataSourcesValidationError ("Pause the data source before attempting to update")."""
+    """Set to pause an Eventstream's running sources before applying a definition update and resume them afterward."""
 
 
 class OperationType(str, Enum):
