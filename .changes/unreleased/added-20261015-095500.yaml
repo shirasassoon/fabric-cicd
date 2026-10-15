@@ -1,0 +1,8 @@
+kind: added
+body: Add the `enable_eventstream_source_pause` feature flag to pause an Eventstream's running sources before a definition update and resume them afterward, required when a source is backed by a private endpoint
+time: 2026-10-15T09:55:00.0000000+03:00
+custom:
+    Author: shirasassoon
+    AuthorLink: https://github.com/shirasassoon
+    Issue: "1152"
+    IssueLink: https://github.com/microsoft/fabric-cicd/issues/1152
