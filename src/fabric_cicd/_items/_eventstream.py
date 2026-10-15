@@ -4,26 +4,76 @@
 """Functions to process and deploy Eventstream item."""
 
 import logging
+import time
 from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 
 from fabric_cicd import FabricWorkspace, constants
+from fabric_cicd._common._fabric_endpoint import handle_retry
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd.constants import FeatureFlag, ItemType
 
 logger = logging.getLogger(__name__)
 
+# Source statuses that indicate the (asynchronous) pause operation has settled.
+_PAUSE_TERMINAL_STATUSES = frozenset({"paused", "pausefailed"})
 
-def _get_running_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str) -> list[dict]:
-    """Return every currently running source in the eventstream's topology."""
+
+def _get_topology_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str) -> list[dict]:
+    """Return every source in the eventstream's topology."""
     # https://learn.microsoft.com/en-us/rest/api/fabric/eventstream/topology/get-eventstream-topology
     response = fabric_workspace_obj.endpoint.invoke(
         method="GET",
         url=f"{fabric_workspace_obj.base_api_url}/eventstreams/{eventstream_guid}/topology",
     )
-    sources = response["body"].get("sources", []) or []
-    return [source for source in sources if source.get("status", "").lower() == "running"]
+    return response["body"].get("sources", []) or []
+
+
+def _get_running_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str) -> list[dict]:
+    """Return every currently running source in the eventstream's topology."""
+    return [
+        source
+        for source in _get_topology_sources(fabric_workspace_obj, eventstream_guid)
+        if source.get("status", "").lower() == "running"
+    ]
+
+
+def _wait_for_sources_paused(
+    fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, source_ids: list[str]
+) -> None:
+    """
+    Poll the topology until the given sources settle into a terminal paused state.
+
+    The pause API is asynchronous (Running -> Pausing -> Paused). A subsequent resume is
+    rejected while a source is still 'Pausing', so we wait for each source to settle before
+    continuing with (and later resuming after) the publish.
+    """
+    pending = set(source_ids)
+    start_time = time.time()
+    attempt = 0
+    while pending:
+        statuses = {
+            source["id"]: source.get("status", "").lower()
+            for source in _get_topology_sources(fabric_workspace_obj, eventstream_guid)
+        }
+        # Keep waiting only on sources that are still present and still transitioning.
+        pending = {
+            source_id
+            for source_id in pending
+            if source_id in statuses and statuses[source_id] not in _PAUSE_TERMINAL_STATUSES
+        }
+        if not pending:
+            return
+        handle_retry(
+            attempt=attempt,
+            base_delay=2,
+            response_retry_after=20,
+            prepend_message=f"{constants.INDENT}Waiting for Eventstream source(s) to pause.",
+            max_duration=constants.RETRY_MAX_DURATION_SECONDS,
+            start_time=start_time,
+        )
+        attempt += 1
 
 
 def _pause_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, source: dict) -> None:
@@ -72,9 +122,16 @@ def _paused_eventstream_sources(
                 if not item.guid:
                     continue
                 # Get the running sources for the deployed eventstream and pause them
-                for source in _get_running_sources(fabric_workspace_obj, item.guid):
+                running_sources = _get_running_sources(fabric_workspace_obj, item.guid)
+                for source in running_sources:
                     _pause_source(fabric_workspace_obj, item.guid, source)
                     paused_sources.append((item.guid, source))
+                # Pausing is asynchronous; wait until the sources settle so the later
+                # resume (and the update in between) are not rejected while still 'Pausing'.
+                if running_sources:
+                    _wait_for_sources_paused(
+                        fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
+                    )
         yield
     finally:
         # Resume all previously paused sources

@@ -34,17 +34,27 @@ def _make_publisher(topology_sources=None):
     """
     Create an EventstreamPublisher with a mocked FabricWorkspace.
 
+    The mock is stateful: a successful POST to a source's /pause endpoint flips that
+    source's topology status to 'Paused' (mirroring the asynchronous pause settling),
+    and /resume flips it back to 'Running'.
+
     Args:
         topology_sources: list of source dicts returned by the mocked topology GET.
     """
     workspace = MagicMock()
     workspace.base_api_url = f"https://api.example.com/v1/workspaces/{EVENTSTREAM_GUID}"
 
-    sources = topology_sources if topology_sources is not None else []
+    state = {source["id"]: dict(source) for source in (topology_sources or [])}
 
     def mock_invoke(method, url, _body=None, **_kwargs):
         if method == "GET" and url.endswith("/topology"):
-            return {"body": {"sources": sources}}
+            return {"body": {"sources": [dict(source) for source in state.values()]}}
+        if method == "POST" and "/sources/" in url:
+            source_id = url.split("/sources/")[1].split("/")[0]
+            if url.endswith("/pause") and source_id in state:
+                state[source_id]["status"] = "Paused"
+            elif url.endswith("/resume") and source_id in state:
+                state[source_id]["status"] = "Running"
         return {"body": {}}
 
     workspace.endpoint = MagicMock()
@@ -107,6 +117,52 @@ def test_flag_on_pauses_running_sources_then_resumes():
 
     resume_call = next(call for call in invoke_calls if call.kwargs["url"].endswith("/resume"))
     assert resume_call.kwargs["body"] == {"startType": "WhenLastStopped"}
+
+
+def test_flag_on_waits_for_async_pause_before_resuming(monkeypatch):
+    """Pause is asynchronous: resume must wait until the source leaves the transitional 'Pausing' state.
+
+    Reproduces the real-world DataSourceStatusConflict where resume was called while the
+    source was still 'Pausing'. The mock reports 'Pausing' for the first two topology polls
+    after pause, then 'Paused'.
+    """
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    # Avoid real backoff sleeps during the poll loop.
+    monkeypatch.setenv("FABRIC_CICD_RETRY_DELAY_OVERRIDE_SECONDS", "0")
+
+    workspace = MagicMock()
+    workspace.base_api_url = f"https://api.example.com/v1/workspaces/{EVENTSTREAM_GUID}"
+
+    status = {"value": "Running"}
+    # Topology statuses returned in order once the source has been paused.
+    pending_statuses = ["Pausing", "Pausing", "Paused"]
+
+    def mock_invoke(method, url, _body=None, **_kwargs):
+        if method == "GET" and url.endswith("/topology"):
+            current = status["value"]
+            if current == "Paused-pending":
+                current = pending_statuses.pop(0) if pending_statuses else "Paused"
+            return {"body": {"sources": [{"id": SOURCE_ID, "name": "MySource", "status": current}]}}
+        if method == "POST" and url.endswith(f"/sources/{SOURCE_ID}/pause"):
+            status["value"] = "Paused-pending"
+        elif method == "POST" and url.endswith(f"/sources/{SOURCE_ID}/resume"):
+            status["value"] = "Running"
+        return {"body": {}}
+
+    workspace.endpoint = MagicMock()
+    workspace.endpoint.invoke = MagicMock(side_effect=mock_invoke)
+    publisher = EventstreamPublisher.__new__(EventstreamPublisher)
+    publisher.fabric_workspace_obj = workspace
+
+    with publisher.publish_items_context([_make_item()]):
+        pass
+
+    invoke_calls = workspace.endpoint.invoke.call_args_list
+    urls = [call.kwargs["url"] for call in invoke_calls]
+    # The topology was polled multiple times while the source settled from Pausing -> Paused.
+    assert sum(1 for url in urls if url.endswith("/topology")) >= 3
+    # Resume is still issued once the source has settled.
+    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
 
 
 def test_flag_on_only_running_sources_are_paused():
