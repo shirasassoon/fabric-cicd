@@ -4,7 +4,7 @@
 """Functions to process and deploy Eventstream item."""
 
 import logging
-from collections.abc import Iterator
+from collections.abc import Generator
 from contextlib import AbstractContextManager, contextmanager
 
 from fabric_cicd import FabricWorkspace, constants
@@ -50,7 +50,7 @@ def _resume_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str,
 
 
 @contextmanager
-def _paused_eventstream_sources(fabric_workspace_obj: FabricWorkspace, items: list[Item]) -> Iterator[None]:
+def _paused_eventstream_sources(fabric_workspace_obj: FabricWorkspace, items: list[Item]) -> Generator[None, None, None]:
     """
     Pause the running sources of the given deployed eventstreams for the duration of the publish, then resume them.
 
