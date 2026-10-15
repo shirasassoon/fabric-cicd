@@ -54,29 +54,30 @@ def _paused_eventstream_sources(
     fabric_workspace_obj: FabricWorkspace, items: list[Item]
 ) -> Generator[None, None, None]:
     """
-    Pause the running sources of the given deployed eventstreams for the duration of the publish, then resume them.
-
-    This is the single source of truth for the pause/resume flow, applied by both publish paths
-    through EventstreamPublisher.publish_items_context. It is a no-op unless the
-    enable_eventstream_source_pause feature flag is set. Eventstreams that are not yet deployed
-    (no GUID) are skipped, as they have no running sources. Sources are always resumed via a
-    finally block, so a failed publish can never leave them paused.
+    Handles source pausing for both publish paths (standard and bulk) via EventstreamPublisher.publish_items_context.
+    It runs only when enable_eventstream_source_pause is set, skips undeployed Eventstreams, and
+    resumes sources in a finally block.
 
     Args:
         fabric_workspace_obj: The FabricWorkspace object.
         items: The eventstream Item objects being published.
     """
-    paused_sources = []  # list of (eventstream_guid, source) tuples
+    # List of (eventstream_guid, source) tuples
+    paused_sources = []
     try:
+        # Only proceed if the feature flag for pausing eventstream sources is enabled
         if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value in constants.FEATURE_FLAG:
             for item in items:
+                # Skip items that are not yet deployed
                 if not item.guid:
                     continue
+                # Get the running sources for the deployed eventstream and pause them
                 for source in _get_running_sources(fabric_workspace_obj, item.guid):
                     _pause_source(fabric_workspace_obj, item.guid, source)
                     paused_sources.append((item.guid, source))
         yield
     finally:
+        # Resume all previously paused sources
         for eventstream_guid, source in paused_sources:
             _resume_source(fabric_workspace_obj, eventstream_guid, source)
 
@@ -87,5 +88,5 @@ class EventstreamPublisher(ItemPublisher):
     item_type = ItemType.EVENTSTREAM.value
 
     def publish_items_context(self, items: list[Item]) -> AbstractContextManager[None]:
-        """Pause/resume the eventstreams' running sources around their publish (see _paused_eventstream_sources)."""
+        """Return a context manager that pauses running sources while Eventstreams are published."""
         return _paused_eventstream_sources(self.fabric_workspace_obj, items)

@@ -389,8 +389,7 @@ class ItemPublisher(Publisher):
                         [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
-                # Enter each publisher's items context (e.g. pausing eventstream sources) around the
-                # bulk publish so per-type setup/teardown applies to the bulk path as well.
+                # Apply each publisher's setup and teardown (e.g., pausing Eventstream sources) around bulk publishing
                 items_by_publisher: dict[ItemPublisher, list[Item]] = {}
                 for _item_name, item, publisher in batch_items:
                     items_by_publisher.setdefault(publisher, []).append(item)
@@ -464,6 +463,7 @@ class ItemPublisher(Publisher):
 
         config = getattr(self.__class__, "parallel_config", ParallelConfig())
 
+        # Apply publisher-specific setup and teardown around standard publishing
         with self.publish_items_context(list(items.values())):
             if config.ordered_items_func is not None:
                 order = config.ordered_items_func(self)
@@ -576,11 +576,6 @@ class ItemPublisher(Publisher):
         The default is a no-op. Subclasses can override to set up and tear down external
         state around the publish of their items (e.g. pausing resources before the update
         and resuming them afterward), with a guaranteed teardown even if the publish fails.
-
-        This single hook is applied by both publish paths: once around the whole item set in
-        publish_all() (one-at-a-time path) and once per publisher per batch in
-        publish_all_bulk() (bulk path). It is the failure-safe counterpart to the
-        pre_publish_all()/post_publish_all() lifecycle hooks, which are skipped on a bulk failure.
 
         Args:
             items: The Item objects of this type being published.
