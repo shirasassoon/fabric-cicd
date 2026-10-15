@@ -16,7 +16,7 @@ from fabric_cicd.constants import FeatureFlag, ItemType
 
 logger = logging.getLogger(__name__)
 
-# Source statuses that indicate the (asynchronous) pause operation has settled.
+# Source statuses that indicate the (asynchronous) pause operation has settled
 _PAUSE_TERMINAL_STATUSES = frozenset({"paused", "pausefailed"})
 
 
@@ -43,11 +43,9 @@ def _wait_for_sources_paused(
     fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, source_ids: list[str]
 ) -> None:
     """
-    Poll the topology until the given sources settle into a terminal paused state.
+    Poll until each source reaches a terminal pause status.
 
-    The pause API is asynchronous (Running -> Pausing -> Paused). A subsequent resume is
-    rejected while a source is still 'Pausing', so we wait for each source to settle before
-    continuing with (and later resuming after) the publish.
+    Pausing is asynchronous, and resume requests fail while a source is still transitioning.
     """
     pending = set(source_ids)
     start_time = time.time()
@@ -57,7 +55,7 @@ def _wait_for_sources_paused(
             source["id"]: source.get("status", "").lower()
             for source in _get_topology_sources(fabric_workspace_obj, eventstream_guid)
         }
-        # Keep waiting only on sources that are still present and still transitioning.
+        # Keep waiting only on sources that are still present and still transitioning
         pending = {
             source_id
             for source_id in pending
@@ -126,8 +124,7 @@ def _paused_eventstream_sources(
                 for source in running_sources:
                     _pause_source(fabric_workspace_obj, item.guid, source)
                     paused_sources.append((item.guid, source))
-                # Pausing is asynchronous; wait until the sources settle so the later
-                # resume (and the update in between) are not rejected while still 'Pausing'.
+                # Wait until the sources settle so the later resume is not rejected while still 'Pausing'
                 if running_sources:
                     _wait_for_sources_paused(
                         fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
