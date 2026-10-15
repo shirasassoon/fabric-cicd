@@ -154,3 +154,64 @@ def test_flag_on_new_eventstream_without_guid_skips_pause():
 def test_flag_in_supported_feature_flags():
     """The new flag is exposed via get_supported_feature_flags()."""
     assert FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value in get_supported_feature_flags()
+
+
+# --- Bulk publish path (publish_batch_context) ---------------------------------------------------
+
+
+def test_batch_context_flag_off_is_noop():
+    """Without the flag, the batch context makes no API calls (bulk path unchanged)."""
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+
+    with publisher.publish_batch_context([_make_item()]):
+        pass
+
+    workspace.endpoint.invoke.assert_not_called()
+
+
+def test_batch_context_pauses_on_enter_and_resumes_on_exit():
+    """With the flag, running sources are paused on enter and only resumed on exit."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+
+    with publisher.publish_batch_context([_make_item()]):
+        # Inside the context the source is paused but not yet resumed.
+        urls_inside = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+        assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls_inside)
+        assert not any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls_inside)
+
+    urls_after = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls_after)
+
+
+def test_batch_context_resumes_when_bulk_publish_fails():
+    """A failure inside the batch context still resumes paused sources (finally path)."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+
+    bulk_error = Exception("bulk boom")
+    with pytest.raises(Exception, match="bulk boom"), publisher.publish_batch_context([_make_item()]):
+        raise bulk_error
+
+    urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+    assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls)
+    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
+
+
+def test_batch_context_skips_new_eventstream_without_guid():
+    """Eventstreams without a GUID (not yet deployed) are skipped in the bulk path."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+
+    with publisher.publish_batch_context([_make_item(guid="")]):
+        pass
+
+    workspace.endpoint.invoke.assert_not_called()

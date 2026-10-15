@@ -6,6 +6,7 @@
 import logging
 from abc import ABC, abstractmethod
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import AbstractContextManager, ExitStack, nullcontext
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -388,9 +389,19 @@ class ItemPublisher(Publisher):
                         [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
-                fabric_workspace_obj._publish_items(
-                    batch_items, skipped_items=skipped_items if batch_index == 0 else None
-                )
+                # Enter each publisher's batch context (e.g. pausing eventstream sources) around the
+                # bulk publish so per-type setup/teardown applies to the bulk path as well.
+                items_by_publisher: dict[ItemPublisher, list[Item]] = {}
+                for _item_name, item, publisher in batch_items:
+                    items_by_publisher.setdefault(publisher, []).append(item)
+
+                with ExitStack() as batch_stack:
+                    for publisher, publisher_items in items_by_publisher.items():
+                        batch_stack.enter_context(publisher.publish_batch_context(publisher_items))
+
+                    fabric_workspace_obj._publish_items(
+                        batch_items, skipped_items=skipped_items if batch_index == 0 else None
+                    )
 
                 # Refresh deployed items and invalidate cached $items.* values between batches
                 if batch_index < len(batches) - 1:
@@ -556,6 +567,20 @@ class ItemPublisher(Publisher):
         Default implementation does nothing.
         """
         pass
+
+    def publish_batch_context(self, items: list["Item"]) -> AbstractContextManager[None]:  # noqa: ARG002
+        """
+        Return a context manager wrapping the bulk publish of this type's items within a batch.
+
+        The default is a no-op. Subclasses can override to set up and tear down external state
+        around the bulk import API call for their items (e.g. pausing resources before the
+        update and resuming them afterward). This is the bulk-publish counterpart to overriding
+        publish_one() in the one-at-a-time path.
+
+        Args:
+            items: The Item objects of this type being published in the current batch.
+        """
+        return nullcontext()
 
     def post_publish_all_check(self) -> None:
         """

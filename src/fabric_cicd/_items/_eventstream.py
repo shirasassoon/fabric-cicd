@@ -4,6 +4,8 @@
 """Functions to process and deploy Eventstream item."""
 
 import logging
+from collections.abc import Iterator
+from contextlib import AbstractContextManager, contextmanager
 
 from fabric_cicd import FabricWorkspace, constants
 from fabric_cicd._common._item import Item
@@ -47,27 +49,46 @@ def _resume_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str,
     )
 
 
+@contextmanager
+def _paused_eventstream_sources(fabric_workspace_obj: FabricWorkspace, items: list[Item]) -> Iterator[None]:
+    """
+    Pause the running sources of the given deployed eventstreams for the duration of the publish, then resume them.
+
+    This is the single source of truth for the pause/resume flow, shared by the single-item
+    (publish_one) and bulk (publish_batch_context) publish paths. It is a no-op unless the
+    enable_eventstream_source_pause feature flag is set. Eventstreams that are not yet deployed
+    (no GUID) are skipped, as they have no running sources. Sources are always resumed via a
+    finally block, so a failed publish can never leave them paused.
+
+    Args:
+        fabric_workspace_obj: The FabricWorkspace object.
+        items: The eventstream Item objects being published.
+    """
+    paused_sources = []  # list of (eventstream_guid, source) tuples
+    try:
+        if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value in constants.FEATURE_FLAG:
+            for item in items:
+                if not item.guid:
+                    continue
+                for source in _get_running_sources(fabric_workspace_obj, item.guid):
+                    _pause_source(fabric_workspace_obj, item.guid, source)
+                    paused_sources.append((item.guid, source))
+        yield
+    finally:
+        for eventstream_guid, source in paused_sources:
+            _resume_source(fabric_workspace_obj, eventstream_guid, source)
+
+
 class EventstreamPublisher(ItemPublisher):
     """Publisher for Eventstream items."""
 
     item_type = ItemType.EVENTSTREAM.value
 
     def publish_one(self, item_name: str, item: Item) -> None:
-        """Publish a single Eventstream item."""
-        # A missing GUID means the eventstream has not been deployed yet (create), so there are no running sources to pause
-        if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG or not item.guid:
+        """Publish a single Eventstream item, pausing its running sources when the feature flag is set."""
+        with _paused_eventstream_sources(self.fabric_workspace_obj, [item]):
             self.fabric_workspace_obj._publish_item(item_name=item_name, item_type=self.item_type)
-            return
 
-        paused_sources = []
-        try:
-            # Pause all currently running sources before publishing the eventstream item
-            for source in _get_running_sources(self.fabric_workspace_obj, item.guid):
-                _pause_source(self.fabric_workspace_obj, item.guid, source)
-                paused_sources.append(source)
-            # Publish the eventstream item while all previously running sources are paused
-            self.fabric_workspace_obj._publish_item(item_name=item_name, item_type=self.item_type)
-        finally:
-            # Resume all previously paused sources after publishing the eventstream item
-            for source in paused_sources:
-                _resume_source(self.fabric_workspace_obj, item.guid, source)
+    def publish_batch_context(self, items: list[Item]) -> AbstractContextManager[None]:
+        """Pause/resume the batch's eventstream sources around the bulk publish (see _paused_eventstream_sources)."""
+        return _paused_eventstream_sources(self.fabric_workspace_obj, items)
