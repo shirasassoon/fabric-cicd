@@ -925,26 +925,11 @@ class FabricWorkspace:
             items_with_context: A list of tuples containing item name, Item object, and publisher context required for processing the item files.
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
         """
-        options = {"allowPairingByName": True}
+        options: dict[str, object] = {"allowPairingByName": True}
         if self.deployment_plan is not None:
-            plan = next(
-                (
-                    item
-                    for name, item, _ in items_with_context
-                    if item.type == ItemType.DEPLOYMENT_PLAN.value and name == self.deployment_plan
-                ),
-                None,
-            )
-            if plan is None:
-                msg = f"Deployment Plan '{self.deployment_plan}' must be included in the bulk publish batch."
-                raise InputError(msg, logger)
-            if not plan.logical_id:
-                msg = f"Deployment Plan '{plan.name}' must have a logical ID."
-                raise InputError(msg, logger)
-            options = {
-                "allowPairingByName": False,
-                "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
-            }
+            from fabric_cicd._items._deploymentplans import set_deployment_plan
+
+            options = set_deployment_plan(self.deployment_plan, items_with_context)
 
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []

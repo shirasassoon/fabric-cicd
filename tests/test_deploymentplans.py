@@ -11,7 +11,7 @@ from fabric_cicd import FabricWorkspace, ItemType
 from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._common._item import Item
 from fabric_cicd._common._validate_input import validate_deployment_plan
-from fabric_cicd._items._deploymentplans import DeploymentPlanPublisher
+from fabric_cicd._items._deploymentplans import DeploymentPlanPublisher, set_deployment_plan
 
 
 @pytest.mark.parametrize("name", [None, "Plan", " Plan "])
@@ -37,6 +37,22 @@ def make_workspace():
 
 def make_plan(name="Plan", logical_id="00000000-0000-0000-0000-000000000000"):
     return Item(ItemType.DEPLOYMENT_PLAN.value, name, "", "", logical_id=logical_id)
+
+
+def test_set_deployment_plan_returns_bulk_options_for_undeployed_plan():
+    plan = make_plan()
+
+    assert set_deployment_plan("Plan", [(plan.name, plan, object())]) == {
+        "allowPairingByName": False,
+        "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
+    }
+
+
+def test_set_deployment_plan_rejects_same_name_of_another_type():
+    notebook = Item(ItemType.NOTEBOOK.value, "Plan", "", "", logical_id="notebook-id")
+
+    with pytest.raises(InputError, match="must be included"):
+        set_deployment_plan("Plan", [(notebook.name, notebook, object())])
 
 
 def test_bulk_publish_uses_top_level_plan_logical_id():
