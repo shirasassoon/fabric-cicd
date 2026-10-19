@@ -916,10 +916,29 @@ class FabricWorkspace:
         """
         Publishes or updates items in bulk via the bulk import API.
 
+        A single DeploymentPlan in the batch is referenced by logical ID in the
+        top-level options and disables pairing by name. It need not be deployed.
+
         Args:
             items_with_context: A list of tuples containing item name, Item object, and publisher context required for processing the item files.
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
         """
+        plans = [item for _, item, _ in items_with_context if item.type == ItemType.DEPLOYMENT_PLAN.value]
+        if len(plans) > 1:
+            msg = "Only one Deployment Plan can be used in a bulk publish batch."
+            raise InputError(msg, logger)
+
+        options = {"allowPairingByName": True}
+        if plans:
+            plan = plans[0]
+            if not plan.logical_id:
+                msg = f"Deployment Plan '{plan.name}' must have a logical ID."
+                raise InputError(msg, logger)
+            options = {
+                "allowPairingByName": False,
+                "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
+            }
+
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []
         item_options_by_logical_id = []
@@ -933,7 +952,6 @@ class FabricWorkspace:
 
         logger.info(f"Publishing {len(items_with_context)} item(s) in bulk")
 
-        options = {"allowPairingByName": True}
         if item_options_by_logical_id:
             options["itemOptionsByLogicalId"] = item_options_by_logical_id
 
