@@ -10,7 +10,19 @@ import pytest
 from fabric_cicd import FabricWorkspace, ItemType
 from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._common._item import Item
+from fabric_cicd._common._validate_input import validate_deployment_plan
 from fabric_cicd._items._deploymentplans import DeploymentPlanPublisher
+
+
+@pytest.mark.parametrize("name", [None, "Plan", " Plan "])
+def test_validate_deployment_plan_accepts_optional_name(name):
+    assert validate_deployment_plan(name) is None
+
+
+@pytest.mark.parametrize("name", ["", " ", "\t\n", 123, False, [], {}])
+def test_validate_deployment_plan_rejects_invalid_name(name):
+    with pytest.raises(InputError, match="'deployment_plan' must be a non-empty string"):
+        validate_deployment_plan(name)
 
 
 def make_workspace():

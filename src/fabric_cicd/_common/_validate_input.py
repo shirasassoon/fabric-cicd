@@ -280,6 +280,13 @@ def validate_shortcut_exclude_regex(shortcut_exclude_regex: Optional[str]) -> No
     )
 
 
+def validate_deployment_plan(deployment_plan: Optional[str]) -> None:
+    """Validate that an optional deployment plan name is a non-empty string."""
+    if deployment_plan is not None and (not isinstance(deployment_plan, str) or not deployment_plan.strip()):
+        msg = "'deployment_plan' must be a non-empty string."
+        raise InputError(msg, logger)
+
+
 def validate_git_compare_ref(git_compare_ref: str) -> str:
     """
     Validate the git_compare_ref parameter to prevent git flag injection.

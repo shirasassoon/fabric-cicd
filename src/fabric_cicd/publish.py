@@ -22,6 +22,7 @@ from fabric_cicd._common._deployment_result import DeploymentResult, DeploymentS
 from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InputError
 from fabric_cicd._common._logging import log_header
 from fabric_cicd._common._validate_input import (
+    validate_deployment_plan,
     validate_environment,
     validate_fabric_workspace_obj,
     validate_folder_path_exclude_regex,
@@ -206,9 +207,7 @@ def publish_all_items(
     fabric_workspace_obj.shortcut_exclude_regex = None
     fabric_workspace_obj.deployment_plan = None
 
-    if deployment_plan is not None and (not isinstance(deployment_plan, str) or not deployment_plan.strip()):
-        msg = "'deployment_plan' must be a non-empty string."
-        raise InputError(msg, logger)
+    validate_deployment_plan(deployment_plan)
 
     # Initialize response collection if feature flag is enabled
     responses_enabled = FeatureFlag.ENABLE_RESPONSE_COLLECTION.value in constants.FEATURE_FLAG
