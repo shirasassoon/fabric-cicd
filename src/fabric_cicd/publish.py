@@ -43,6 +43,7 @@ def publish_all_items(
     folder_path_to_include: Optional[list[str]] = None,
     items_to_include: Optional[list[str]] = None,
     shortcut_exclude_regex: Optional[str] = None,
+    deployment_plan: Optional[str] = None,
 ) -> Optional[dict]:
     """
     Publishes all items defined in the `item_type_in_scope` list of the given FabricWorkspace object.
@@ -54,6 +55,8 @@ def publish_all_items(
         folder_path_to_include: List of folder paths in the format "/folder_name"; only the specified folders and their items will be published.
         items_to_include: List of items in the format "item_name.item_type" that should be published.
         shortcut_exclude_regex: Regex pattern to exclude specific shortcuts from being published in lakehouses.
+        deployment_plan: Name of the repository DeploymentPlan to apply by logical ID.
+            Requires bulk publishing in a single batch and the plan to pass all publish filters.
 
     Returns:
         Dict containing all API responses if the ``enable_response_collection`` feature flag is enabled
@@ -201,6 +204,11 @@ def publish_all_items(
     fabric_workspace_obj.publish_folder_path_to_include = None
     fabric_workspace_obj.items_to_include = None
     fabric_workspace_obj.shortcut_exclude_regex = None
+    fabric_workspace_obj.deployment_plan = None
+
+    if deployment_plan is not None and (not isinstance(deployment_plan, str) or not deployment_plan.strip()):
+        msg = "'deployment_plan' must be a non-empty string."
+        raise InputError(msg, logger)
 
     # Initialize response collection if feature flag is enabled
     responses_enabled = FeatureFlag.ENABLE_RESPONSE_COLLECTION.value in constants.FEATURE_FLAG
@@ -250,6 +258,12 @@ def publish_all_items(
 
         else:
             fabric_workspace_obj.bulk_publish_enabled = True
+
+    if deployment_plan is not None:
+        if not fabric_workspace_obj.bulk_publish_enabled:
+            msg = "'deployment_plan' requires bulk publishing; standard deployment cannot apply a deployment plan."
+            raise InputError(msg, logger)
+        fabric_workspace_obj.deployment_plan = deployment_plan
 
     # Apply selective deployment features
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:
@@ -599,6 +613,7 @@ def deploy_with_config(  # noqa: D417
                     folder_path_to_include=publish_settings.get("folder_path_to_include"),
                     items_to_include=publish_settings.get("items_to_include"),
                     shortcut_exclude_regex=publish_settings.get("shortcut_exclude_regex"),
+                    deployment_plan=publish_settings.get("deployment_plan"),
                 )
             else:
                 logger.info(f"Skipping publish operation for environment '{environment}'")

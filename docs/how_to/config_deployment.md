@@ -123,6 +123,9 @@ The `publish` section is optional and controls item publishing behavior. If this
 
 ```yaml
 publish:
+    # Optional - name of the DeploymentPlan to apply (requires bulk publishing)
+    deployment_plan: <plan_name>
+
     # Optional - pattern to exclude items from publishing (no feature flag required)
     exclude_regex: <regex_pattern_string>
 
@@ -151,6 +154,11 @@ publish:
 
 ```yaml
 publish:
+    # Optional - select a different deployment plan for each environment
+    deployment_plan:
+        <env_1>: <plan_name_1>
+        <env..>: <plan_name..>
+
     # Optional - pattern to exclude items from publishing
     exclude_regex:
         <env_1>: <regex_pattern_string_1>
@@ -188,6 +196,30 @@ publish:
         <env_1>: <bool_value>
         <env..>: <bool_value>
 ```
+
+#### Deployment Plan Selection
+
+Set `publish.deployment_plan` to the exact display name of a repository DeploymentPlan.
+The value may be a non-empty string or an environment mapping, as shown above.
+For programmatic deployment, pass the same optional setting to `publish_all_items()`:
+
+```python
+publish_all_items(workspace, deployment_plan="My Deployment Plan")
+```
+
+This requires the `enable_bulk_publish` and `enable_experimental_features` flags.
+Include `DeploymentPlan` in `item_types_in_scope` (or leave the scope unspecified).
+The selected plan must pass all item and folder filters and be included in the bulk
+request. It is referenced by its source-controlled logical ID with
+`referenceType: ByLogicalId`; it does not need to be deployed already.
+When selected, `allowPairingByName` is `false`. Other plans may also be published,
+but only the named plan is applied. Omitting `deployment_plan` applies no plan and
+preserves pairing by name.
+
+Deployment plan selection is not supported with standard publishing or with
+parameter dependencies that split publishing into multiple batches. These cases,
+a missing/filtered plan, or a plan without a logical ID raise an error instead
+of silently publishing without the requested plan.
 
 ### Unpublish Settings
 

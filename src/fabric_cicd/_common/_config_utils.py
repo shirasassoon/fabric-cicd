@@ -118,6 +118,7 @@ def extract_publish_settings(config: dict, environment: str) -> dict:
             "folder_path_to_include",
             "items_to_include",
             "shortcut_exclude_regex",
+            "deployment_plan",
         ]
         for key in settings_to_update:
             update_setting(settings, publish_config, key, environment)

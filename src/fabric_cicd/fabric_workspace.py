@@ -143,6 +143,7 @@ class FabricWorkspace:
         self.publish_folder_path_exclude_regex = None
         self.publish_folder_path_to_include = None
         self.shortcut_exclude_regex = None
+        self.deployment_plan: Optional[str] = None
         self.items_to_include = None
         self.responses = None
         self.unpublish_responses = None
@@ -916,21 +917,27 @@ class FabricWorkspace:
         """
         Publishes or updates items in bulk via the bulk import API.
 
-        A single DeploymentPlan in the batch is referenced by logical ID in the
-        top-level options and disables pairing by name. It need not be deployed.
+        The explicitly selected DeploymentPlan is referenced by logical ID in
+        the top-level options and disables pairing by name. It must be in the
+        batch but need not be deployed. Without a selection, no plan is applied.
 
         Args:
             items_with_context: A list of tuples containing item name, Item object, and publisher context required for processing the item files.
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
         """
-        plans = [item for _, item, _ in items_with_context if item.type == ItemType.DEPLOYMENT_PLAN.value]
-        if len(plans) > 1:
-            msg = "Only one Deployment Plan can be used in a bulk publish batch."
-            raise InputError(msg, logger)
-
         options = {"allowPairingByName": True}
-        if plans:
-            plan = plans[0]
+        if self.deployment_plan is not None:
+            plan = next(
+                (
+                    item
+                    for name, item, _ in items_with_context
+                    if item.type == ItemType.DEPLOYMENT_PLAN.value and name == self.deployment_plan
+                ),
+                None,
+            )
+            if plan is None:
+                msg = f"Deployment Plan '{self.deployment_plan}' must be included in the bulk publish batch."
+                raise InputError(msg, logger)
             if not plan.logical_id:
                 msg = f"Deployment Plan '{plan.name}' must have a logical ID."
                 raise InputError(msg, logger)

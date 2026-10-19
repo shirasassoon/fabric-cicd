@@ -464,6 +464,7 @@ CONFIG_SECTIONS = {
             "shortcut_exclude_regex",
             "skip",
         ],
+            "deployment_plan",
     },
     "unpublish": {"type": dict, "settings": ["exclude_regex", "items_to_include", "skip"]},
     "features": {"type": (list, dict), "settings": []},

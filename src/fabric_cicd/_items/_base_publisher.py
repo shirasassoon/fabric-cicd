@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from fabric_cicd import constants
-from fabric_cicd._common._exceptions import PublishError
+from fabric_cicd._common._exceptions import InputError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd.constants import PARALLEL_MAX_WORKERS, ItemType
 from fabric_cicd.fabric_workspace import FabricWorkspace
@@ -364,6 +364,15 @@ class ItemPublisher(Publisher):
 
         # Phase 2: Batched bulk API calls (publisher context used inside for per-item transforms)
         if items_with_context:
+        if fabric_workspace_obj.deployment_plan is not None and not any(
+            item.type == ItemType.DEPLOYMENT_PLAN.value and name == fabric_workspace_obj.deployment_plan
+            for name, item, _ in items_with_context
+        ):
+            msg = (
+                f"Deployment Plan '{fabric_workspace_obj.deployment_plan}' must be included in the bulk publish batch."
+            )
+            raise InputError(msg, logger)
+
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
 
@@ -383,6 +392,9 @@ class ItemPublisher(Publisher):
             batches = compute_publish_batches(items_with_context, dependency_edges, logical_id_links)
 
             # Iterate over each batch and publish
+            if fabric_workspace_obj.deployment_plan is not None and len(batches) > 1:
+                msg = "'deployment_plan' requires a single bulk publish batch; parameter dependencies produced multiple batches."
+                raise InputError(msg, logger)
             for batch_index, batch_items in enumerate(batches):
                 if len(batches) > 1:
                     logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}")
