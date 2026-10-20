@@ -27,6 +27,7 @@ from fabric_cicd._items._bulk_publish_dependencies import (
     get_async_attributes_to_wait_for,
     has_unfiltered_items_variable,
 )
+from fabric_cicd._items._deploymentplans import set_deployment_plan
 from fabric_cicd.constants import FeatureFlag, ItemType
 from fabric_cicd.fabric_workspace import FabricWorkspace
 
@@ -1739,6 +1740,24 @@ class TestBulkPublishPurgeData:
 @pytest.mark.usefixtures("bulk_publish_flags")
 class TestBulkPublishDeploymentPlan:
     """Tests for explicit deployment plan selection through the public API."""
+
+    def test_resolves_plan_only_once(self, mock_endpoint, temp_workspace_dir):
+        create_test_item_dir(temp_workspace_dir, None, "Plan", "DeploymentPlan", "plan-id")
+        bodies = capture_bulk_bodies(mock_endpoint)
+
+        with (
+            patched_workspace(mock_endpoint, temp_workspace_dir, item_type_in_scope=["DeploymentPlan"]) as ws,
+            patch(
+                "fabric_cicd._items._deploymentplans.set_deployment_plan", wraps=set_deployment_plan
+            ) as mock_set_plan,
+        ):
+            publish.publish_all_items(ws, deployment_plan="Plan")
+
+        mock_set_plan.assert_called_once()
+        assert bodies[0]["options"]["deploymentPlan"] == {
+            "logicalId": "plan-id",
+            "referenceType": "ByLogicalId",
+        }
 
     def test_selects_plan_and_resets_selection_on_next_call(self, mock_endpoint, temp_workspace_dir):
         create_test_item_dir(temp_workspace_dir, None, "Plan", "DeploymentPlan", "plan-id")

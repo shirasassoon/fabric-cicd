@@ -4,6 +4,7 @@
 """Functions to process and deploy Deployment Plan item."""
 
 import logging
+from collections.abc import Sequence
 from typing import Optional
 
 from fabric_cicd._common._exceptions import InputError
@@ -22,7 +23,7 @@ class DeploymentPlanPublisher(ItemPublisher):
 
 def set_deployment_plan(
     deployment_plan: Optional[str],
-    items_with_context: list[tuple[str, Item, object]],
+    items_with_context: Sequence[tuple[str, Item, object]],
 ) -> dict[str, object]:
     """Return the logical-ID plan option, or no options when no plan is selected."""
     if deployment_plan is None:

@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import threading
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Optional
 
@@ -912,7 +913,10 @@ class FabricWorkspace:
         return
 
     def _publish_items(
-        self, items_with_context: list[tuple[str, "Item", object]], skipped_items: Optional[list[str]] = None
+        self,
+        items_with_context: Sequence[tuple[str, "Item", object]],
+        skipped_items: Optional[list[str]] = None,
+        deployment_plan_options: Optional[dict[str, object]] = None,
     ) -> None:
         """
         Publishes or updates items in bulk via the bulk import API.
@@ -924,12 +928,11 @@ class FabricWorkspace:
         Args:
             items_with_context: A list of tuples containing item name, Item object, and publisher context required for processing the item files.
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
+            deployment_plan_options: Plan options already resolved and validated by the bulk publisher.
         """
-        from fabric_cicd._items._deploymentplans import set_deployment_plan
-
         options: dict[str, object] = {"allowPairingByName": True}
-        # Update the top-level options with the deployment plan settings, if specified
-        options.update(set_deployment_plan(self.deployment_plan, items_with_context))
+        if deployment_plan_options is not None:
+            options.update(deployment_plan_options)
 
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []

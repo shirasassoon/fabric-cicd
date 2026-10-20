@@ -64,7 +64,10 @@ def test_bulk_publish_uses_top_level_plan_logical_id():
     workspace.deployment_plan = plan.name
     publisher = DeploymentPlanPublisher(workspace)
 
-    FabricWorkspace._publish_items(workspace, [(plan.name, plan, publisher)])
+    batch = [(plan.name, plan, publisher)]
+    FabricWorkspace._publish_items(
+        workspace, batch, deployment_plan_options=set_deployment_plan(workspace.deployment_plan, batch)
+    )
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"] == {
         "allowPairingByName": True,
@@ -87,16 +90,16 @@ def test_bulk_publish_preserves_per_item_options_with_plan():
     model_publisher = MagicMock()
     model_publisher.get_definition_options.return_value = {"allowPurgeData": True}
 
-    FabricWorkspace._publish_items(
-        workspace,
-        [(plan.name, plan, DeploymentPlanPublisher(workspace)), (model.name, model, model_publisher)],
-    )
+    batch = [(plan.name, plan, DeploymentPlanPublisher(workspace)), (model.name, model, model_publisher)]
+    plan_options = set_deployment_plan(workspace.deployment_plan, batch)
+    FabricWorkspace._publish_items(workspace, batch, deployment_plan_options=plan_options)
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"] == {
         "allowPairingByName": True,
         "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
         "itemOptionsByLogicalId": [{"logicalId": "model-id", "options": {"allowPurgeData": True}}],
     }
+    assert plan_options == {"deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"}}
 
 
 @pytest.mark.parametrize(
@@ -106,13 +109,13 @@ def test_bulk_publish_preserves_per_item_options_with_plan():
         ([make_plan(logical_id="")], "Deployment Plan 'Plan'"),
     ],
 )
-def test_bulk_publish_rejects_invalid_plans_before_request(plans, message):
+def test_set_deployment_plan_rejects_invalid_plans_before_request(plans, message):
     workspace = make_workspace()
     workspace.deployment_plan = "Plan"
     batch = [(plan.name, plan, DeploymentPlanPublisher(workspace)) for plan in plans]
 
     with pytest.raises(InputError, match=message):
-        FabricWorkspace._publish_items(workspace, batch)
+        set_deployment_plan(workspace.deployment_plan, batch)
 
     workspace.endpoint.invoke.assert_not_called()
 
@@ -132,7 +135,10 @@ def test_bulk_publish_selects_named_plan_among_multiple_plans():
     workspace.deployment_plan = selected.name
     publisher = DeploymentPlanPublisher(workspace)
 
-    FabricWorkspace._publish_items(workspace, [(p.name, p, publisher) for p in (first, selected)])
+    batch = [(p.name, p, publisher) for p in (first, selected)]
+    FabricWorkspace._publish_items(
+        workspace, batch, deployment_plan_options=set_deployment_plan(workspace.deployment_plan, batch)
+    )
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"]["deploymentPlan"] == {
         "logicalId": "selected-id",

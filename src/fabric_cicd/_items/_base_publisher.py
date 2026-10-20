@@ -332,6 +332,7 @@ class ItemPublisher(Publisher):
         )
 
         publishers: list[ItemPublisher] = []
+        from fabric_cicd._items._deploymentplans import set_deployment_plan
         items_with_context: list[tuple[str, Item, ItemPublisher]] = []
         skipped_items: list[str] = []
 
@@ -364,14 +365,7 @@ class ItemPublisher(Publisher):
 
         # Phase 2: Batched bulk API calls (publisher context used inside for per-item transforms)
         if items_with_context:
-        if fabric_workspace_obj.deployment_plan is not None and not any(
-            item.type == ItemType.DEPLOYMENT_PLAN.value and name == fabric_workspace_obj.deployment_plan
-            for name, item, _ in items_with_context
-        ):
-            msg = (
-                f"Deployment Plan '{fabric_workspace_obj.deployment_plan}' must be included in the bulk publish batch."
-            )
-            raise InputError(msg, logger)
+        deployment_plan_options = set_deployment_plan(fabric_workspace_obj.deployment_plan, items_with_context)
 
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
@@ -405,7 +399,9 @@ class ItemPublisher(Publisher):
                     )
 
                 fabric_workspace_obj._publish_items(
-                    batch_items, skipped_items=skipped_items if batch_index == 0 else None
+                    batch_items,
+                    skipped_items=skipped_items if batch_index == 0 else None,
+                    deployment_plan_options=deployment_plan_options,
                 )
 
                 # Refresh deployed items and invalidate cached $items.* values between batches
