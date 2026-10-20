@@ -918,18 +918,18 @@ class FabricWorkspace:
         Publishes or updates items in bulk via the bulk import API.
 
         The explicitly selected DeploymentPlan is referenced by logical ID in
-        the top-level options and disables pairing by name. It must be in the
+        the top-level options independently of pairing by name. It must be in the
         batch but need not be deployed. Without a selection, no plan is applied.
 
         Args:
             items_with_context: A list of tuples containing item name, Item object, and publisher context required for processing the item files.
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
         """
-        options: dict[str, object] = {"allowPairingByName": True}
-        if self.deployment_plan is not None:
-            from fabric_cicd._items._deploymentplans import set_deployment_plan
+        from fabric_cicd._items._deploymentplans import set_deployment_plan
 
-            options = set_deployment_plan(self.deployment_plan, items_with_context)
+        options: dict[str, object] = {"allowPairingByName": True}
+        # Update the top-level options with the deployment plan settings, if specified
+        options.update(set_deployment_plan(self.deployment_plan, items_with_context))
 
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []

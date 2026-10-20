@@ -43,9 +43,12 @@ def test_set_deployment_plan_returns_bulk_options_for_undeployed_plan():
     plan = make_plan()
 
     assert set_deployment_plan("Plan", [(plan.name, plan, object())]) == {
-        "allowPairingByName": False,
         "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
     }
+
+
+def test_set_deployment_plan_returns_no_options_without_selection():
+    assert set_deployment_plan(None, []) == {}
 
 
 def test_set_deployment_plan_rejects_same_name_of_another_type():
@@ -64,7 +67,7 @@ def test_bulk_publish_uses_top_level_plan_logical_id():
     FabricWorkspace._publish_items(workspace, [(plan.name, plan, publisher)])
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"] == {
-        "allowPairingByName": False,
+        "allowPairingByName": True,
         "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
     }
 
@@ -90,7 +93,7 @@ def test_bulk_publish_preserves_per_item_options_with_plan():
     )
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"] == {
-        "allowPairingByName": False,
+        "allowPairingByName": True,
         "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
         "itemOptionsByLogicalId": [{"logicalId": "model-id", "options": {"allowPurgeData": True}}],
     }

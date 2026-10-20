@@ -4,6 +4,7 @@
 """Functions to process and deploy Deployment Plan item."""
 
 import logging
+from typing import Optional
 
 from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._common._item import Item
@@ -19,8 +20,14 @@ class DeploymentPlanPublisher(ItemPublisher):
     item_type = ItemType.DEPLOYMENT_PLAN.value
 
 
-def set_deployment_plan(deployment_plan: str, items_with_context: list[tuple[str, Item, object]]) -> dict[str, object]:
-    """Build bulk options for a named plan in the batch, referenced by logical ID."""
+def set_deployment_plan(
+    deployment_plan: Optional[str],
+    items_with_context: list[tuple[str, Item, object]],
+) -> dict[str, object]:
+    """Return the logical-ID plan option, or no options when no plan is selected."""
+    if deployment_plan is None:
+        return {}
+
     plan = next(
         (
             item
@@ -36,6 +43,5 @@ def set_deployment_plan(deployment_plan: str, items_with_context: list[tuple[str
         msg = f"Error with Deployment Plan '{plan.name}'."
         raise InputError(msg, logger)
     return {
-        "allowPairingByName": False,
         "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
     }

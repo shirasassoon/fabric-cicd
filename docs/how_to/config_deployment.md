@@ -212,9 +212,9 @@ Include `DeploymentPlan` in `item_types_in_scope` (or leave the scope unspecifie
 The selected plan must pass all item and folder filters and be included in the bulk
 request. It is referenced by its source-controlled logical ID with
 `referenceType: ByLogicalId`; it does not need to be deployed already.
-When selected, `allowPairingByName` is `false`. Other plans may also be published,
-but only the named plan is applied. Omitting `deployment_plan` applies no plan and
-preserves pairing by name.
+`allowPairingByName` remains `true` independently of plan selection. Other plans
+may also be published, but only the named plan is applied. Omitting
+`deployment_plan` applies no plan.
 
 Deployment plan selection is not supported with standard publishing or with
 parameter dependencies that split publishing into multiple batches. These cases,

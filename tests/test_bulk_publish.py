@@ -1750,7 +1750,7 @@ class TestBulkPublishDeploymentPlan:
             publish.publish_all_items(ws)
 
         assert bodies[0]["options"] == {
-            "allowPairingByName": False,
+            "allowPairingByName": True,
             "deploymentPlan": {"logicalId": "other-id", "referenceType": "ByLogicalId"},
         }
         assert bodies[1]["options"] == {"allowPairingByName": True}
