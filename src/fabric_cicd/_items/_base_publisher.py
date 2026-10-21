@@ -5,8 +5,9 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from contextlib import AbstractContextManager, ExitStack, nullcontext
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from typing import Callable, Optional
 
@@ -38,6 +39,17 @@ class ParallelConfig:
     enabled: bool = True
     max_workers: Optional[int] = PARALLEL_MAX_WORKERS
     ordered_items_func: Optional[Callable[["ItemPublisher"], list[str]]] = None
+
+
+class PublishItemsCleanup:
+    """Register cleanup actions that must run after item publishing."""
+
+    def __init__(self, exit_stack: ExitStack) -> None:
+        self._exit_stack = exit_stack
+
+    def add(self, action: Callable[[], None]) -> None:
+        """Register a cleanup action to run when the publish lifecycle exits."""
+        self._exit_stack.callback(action)
 
 
 class Publisher(ABC):
@@ -573,18 +585,38 @@ class ItemPublisher(Publisher):
         """
         pass
 
-    def publish_items_context(self, items: list["Item"]) -> AbstractContextManager[None]:  # noqa: ARG002
+    def prepare_publish_items(
+        self,
+        items: list["Item"],
+        cleanup: PublishItemsCleanup,  # noqa: ARG002
+    ) -> None:
         """
-        Return a context manager wrapping the publish of this type's items.
+        Perform item-specific setup and register any required cleanup actions.
 
-        The default is a no-op. Subclasses can override to set up and tear down external
-        state around the publish of their items (e.g. pausing resources before the update
-        and resuming them afterward), with a guaranteed teardown even if the publish fails.
+        The default is a no-op. Subclasses can override this method to prepare external
+        state before publishing and register cleanup actions that must run afterward.
+
+        Args:
+            items: The Item objects of this type being published.
+            cleanup: Registry for cleanup actions that must run when publishing exits.
+        """
+        pass
+
+    @contextmanager
+    def publish_items_context(self, items: list["Item"]) -> Generator[None, None, None]:
+        """
+        Run item-specific setup and guaranteed cleanup around publishing.
+
+        Item publishers customize the lifecycle through prepare_publish_items() and do
+        not need to implement a context manager themselves.
 
         Args:
             items: The Item objects of this type being published.
         """
-        return nullcontext()
+        with ExitStack() as exit_stack:
+            cleanup = PublishItemsCleanup(exit_stack)
+            self.prepare_publish_items(items, cleanup)
+            yield
 
     def post_publish_all_check(self) -> None:
         """

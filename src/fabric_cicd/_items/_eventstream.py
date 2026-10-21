@@ -5,19 +5,15 @@
 
 import logging
 import time
-from collections.abc import Generator
-from contextlib import AbstractContextManager, contextmanager
+from functools import partial
 
 from fabric_cicd import FabricWorkspace, constants
 from fabric_cicd._common._fabric_endpoint import handle_retry
 from fabric_cicd._common._item import Item
-from fabric_cicd._items._base_publisher import ItemPublisher
+from fabric_cicd._items._base_publisher import ItemPublisher, PublishItemsCleanup
 from fabric_cicd.constants import FeatureFlag, ItemType
 
 logger = logging.getLogger(__name__)
-
-# Source statuses that indicate the (asynchronous) pause operation has settled
-_PAUSE_TERMINAL_STATUSES = frozenset({"paused", "pausefailed"})
 
 
 def _get_topology_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str) -> list[dict]:
@@ -55,12 +51,14 @@ def _wait_for_sources_paused(
             source["id"]: source.get("status", "").lower()
             for source in _get_topology_sources(fabric_workspace_obj, eventstream_guid)
         }
-        # Keep waiting only on sources that are still present and still transitioning
-        pending = {
-            source_id
-            for source_id in pending
-            if source_id in statuses and statuses[source_id] not in _PAUSE_TERMINAL_STATUSES
-        }
+
+        failed = {source_id for source_id in pending if statuses.get(source_id) == "pausefailed"}
+        if failed:
+            msg = f"Failed to pause Eventstream source(s): {sorted(failed)}"
+            raise Exception(msg)
+
+        # Missing, unknown, and transitional sources remain pending until they pause or time out
+        pending = {source_id for source_id in pending if statuses.get(source_id) != "paused"}
         if not pending:
             return
         handle_retry(
@@ -97,50 +95,26 @@ def _resume_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str,
     )
 
 
-@contextmanager
-def _paused_eventstream_sources(
-    fabric_workspace_obj: FabricWorkspace, items: list[Item]
-) -> Generator[None, None, None]:
-    """
-    Handles source pausing for both publish paths (standard and bulk) via EventstreamPublisher.publish_items_context.
-    It runs only when enable_eventstream_source_pause is set, skips undeployed Eventstreams, and
-    resumes sources in a finally block.
-
-    Args:
-        fabric_workspace_obj: The FabricWorkspace object.
-        items: The eventstream Item objects being published.
-    """
-    # List of (eventstream_guid, source) tuples
-    paused_sources = []
-    try:
-        # Only proceed if the feature flag for pausing eventstream sources is enabled
-        if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value in constants.FEATURE_FLAG:
-            for item in items:
-                # Skip items that are not yet deployed
-                if not item.guid:
-                    continue
-                # Get the running sources for the deployed eventstream and pause them
-                running_sources = _get_running_sources(fabric_workspace_obj, item.guid)
-                for source in running_sources:
-                    _pause_source(fabric_workspace_obj, item.guid, source)
-                    paused_sources.append((item.guid, source))
-                # Wait until the sources settle so the later resume is not rejected while still 'Pausing'
-                if running_sources:
-                    _wait_for_sources_paused(
-                        fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
-                    )
-        yield
-    finally:
-        # Resume all previously paused sources
-        for eventstream_guid, source in paused_sources:
-            _resume_source(fabric_workspace_obj, eventstream_guid, source)
-
-
 class EventstreamPublisher(ItemPublisher):
     """Publisher for Eventstream items."""
 
     item_type = ItemType.EVENTSTREAM.value
 
-    def publish_items_context(self, items: list[Item]) -> AbstractContextManager[None]:
-        """Return a context manager that pauses running sources while Eventstreams are published."""
-        return _paused_eventstream_sources(self.fabric_workspace_obj, items)
+    def prepare_publish_items(self, items: list[Item], cleanup: PublishItemsCleanup) -> None:
+        """Pause running sources and register their resume actions."""
+        if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG:
+            return
+
+        for item in items:
+            if not item.guid:
+                continue
+
+            running_sources = _get_running_sources(self.fabric_workspace_obj, item.guid)
+            for source in running_sources:
+                _pause_source(self.fabric_workspace_obj, item.guid, source)
+                cleanup.add(partial(_resume_source, self.fabric_workspace_obj, item.guid, source))
+
+            if running_sources:
+                _wait_for_sources_paused(
+                    self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
+                )

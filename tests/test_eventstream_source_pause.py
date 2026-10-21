@@ -165,6 +165,104 @@ def test_flag_on_waits_for_async_pause_before_resuming(monkeypatch):
     assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
 
 
+def test_flag_on_missing_source_remains_pending_until_it_reappears(monkeypatch):
+    """A temporarily missing source remains pending instead of being treated as paused."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    monkeypatch.setenv("FABRIC_CICD_RETRY_DELAY_OVERRIDE_SECONDS", "0")
+
+    workspace = MagicMock()
+    workspace.base_api_url = f"https://api.example.com/v1/workspaces/{EVENTSTREAM_GUID}"
+    topology_responses = [
+        [{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+        [],
+        [{"id": SOURCE_ID, "name": "MySource", "status": "Paused"}],
+    ]
+
+    def mock_invoke(method, url, _body=None, **_kwargs):
+        if method == "GET" and url.endswith("/topology"):
+            sources = topology_responses.pop(0) if topology_responses else []
+            return {"body": {"sources": sources}}
+        return {"body": {}}
+
+    workspace.endpoint = MagicMock()
+    workspace.endpoint.invoke = MagicMock(side_effect=mock_invoke)
+    publisher = EventstreamPublisher.__new__(EventstreamPublisher)
+    publisher.fabric_workspace_obj = workspace
+
+    with publisher.publish_items_context([_make_item()]):
+        pass
+
+    urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+    assert sum(1 for url in urls if url.endswith("/topology")) == 3
+    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
+
+
+def test_flag_on_pause_failed_stops_publish_and_resumes_source():
+    """A terminal PauseFailed status aborts before publishing and runs registered cleanup."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+
+    workspace = MagicMock()
+    workspace.base_api_url = f"https://api.example.com/v1/workspaces/{EVENTSTREAM_GUID}"
+    status = {"value": "Running"}
+
+    def mock_invoke(method, url, _body=None, **_kwargs):
+        if method == "GET" and url.endswith("/topology"):
+            return {"body": {"sources": [{"id": SOURCE_ID, "name": "MySource", "status": status["value"]}]}}
+        if method == "POST" and url.endswith(f"/sources/{SOURCE_ID}/pause"):
+            status["value"] = "PauseFailed"
+        elif method == "POST" and url.endswith(f"/sources/{SOURCE_ID}/resume"):
+            status["value"] = "Running"
+        return {"body": {}}
+
+    workspace.endpoint = MagicMock()
+    workspace.endpoint.invoke = MagicMock(side_effect=mock_invoke)
+    publisher = EventstreamPublisher.__new__(EventstreamPublisher)
+    publisher.fabric_workspace_obj = workspace
+    entered_publish = False
+
+    with (
+        pytest.raises(Exception, match="Failed to pause Eventstream source"),
+        publisher.publish_items_context([_make_item()]),
+    ):
+        entered_publish = True
+
+    assert not entered_publish
+    urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+    assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
+
+
+def test_setup_failure_resumes_sources_already_paused():
+    """If setup fails midway, cleanup runs for sources paused before the failure."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+
+    workspace = MagicMock()
+    workspace.base_api_url = f"https://api.example.com/v1/workspaces/{EVENTSTREAM_GUID}"
+    sources = [
+        {"id": "source-1", "name": "SourceOne", "status": "Running"},
+        {"id": "source-2", "name": "SourceTwo", "status": "Running"},
+    ]
+
+    def mock_invoke(method, url, _body=None, **_kwargs):
+        if method == "GET" and url.endswith("/topology"):
+            return {"body": {"sources": sources}}
+        if method == "POST" and url.endswith("/sources/source-2/pause"):
+            pause_error = Exception("Second pause failed")
+            raise pause_error
+        return {"body": {}}
+
+    workspace.endpoint = MagicMock()
+    workspace.endpoint.invoke = MagicMock(side_effect=mock_invoke)
+    publisher = EventstreamPublisher.__new__(EventstreamPublisher)
+    publisher.fabric_workspace_obj = workspace
+
+    with pytest.raises(Exception, match="Second pause failed"), publisher.publish_items_context([_make_item()]):
+        pass
+
+    urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+    assert any(url.endswith("/sources/source-1/resume") for url in urls)
+    assert not any(url.endswith("/sources/source-2/resume") for url in urls)
+
+
 def test_flag_on_only_running_sources_are_paused():
     """Only running sources are paused; stopped sources are left untouched."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
@@ -215,16 +313,10 @@ def test_flag_on_new_eventstream_without_guid_skips_pause():
 
 def test_base_publish_items_context_is_noop():
     """The base hook is a no-op context manager so other item types are unaffected."""
-    publisher, workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher = ItemPublisher.__new__(ItemPublisher)
 
-    # Invoke the base implementation directly (bypassing the Eventstream override).
-    with ItemPublisher.publish_items_context(publisher, [_make_item()]):
+    with publisher.publish_items_context([_make_item()]):
         pass
-
-    workspace.endpoint.invoke.assert_not_called()
 
 
 def test_flag_in_supported_feature_flags():
