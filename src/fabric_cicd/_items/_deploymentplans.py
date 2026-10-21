@@ -24,7 +24,17 @@ class DeploymentPlanPublisher(ItemPublisher):
 def set_deployment_plan(
     deployment_plan: Optional[str], items_with_context: Sequence[tuple[str, Item, object]]
 ) -> dict[str, object]:
-    """Return the logical-ID plan option, or no options when no plan is selected."""
+    """
+    Sets the deployment plan to be used by the bulk publish operation.
+
+    Args:
+        deployment_plan: The name of the deployment plan to use, if provided.
+        items_with_context: A sequence of tuples containing item names, Item objects, and additional context.
+
+    Returns:
+        A dictionary containing the logical ID of the deployment plan, or an empty dictionary if no plan is selected.
+
+    """
     if deployment_plan is None:
         return {}
 

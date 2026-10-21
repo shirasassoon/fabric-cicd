@@ -180,7 +180,6 @@ def validate_deployment_plan(input_value: str) -> str:
     Args:
         input_value: The input value to validate.
     """
-    # Validate the deployment plan input type.
     validate_data_type("string", "deployment_plan", input_value)
 
     if not input_value.strip():
