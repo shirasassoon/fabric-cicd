@@ -207,8 +207,10 @@ For programmatic deployment, use the optional `deployment_plan` argument:
 publish_all_items(workspace, deployment_plan="My Deployment Plan")
 ```
 
-This option currently requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled.
-Deployment plans cannot be applied automatically in standard publish mode or in bulk publish mode when parameter dependencies require multiple batches.
+!!! note
+
+    - This option currently requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled.
+    - Deployment plans cannot be applied automatically in standard publish mode or in bulk publish mode when parameter dependencies require multiple batches.
 
 ### Unpublish Settings
 
