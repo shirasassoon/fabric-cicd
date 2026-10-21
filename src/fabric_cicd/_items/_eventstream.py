@@ -51,13 +51,13 @@ def _wait_for_sources_paused(
             source["id"]: source.get("status", "").lower()
             for source in _get_topology_sources(fabric_workspace_obj, eventstream_guid)
         }
-
+        # Identify sources that have failed to pause and raise an exception (fails the deployment run)
         failed = {source_id for source_id in pending if statuses.get(source_id) == "pausefailed"}
         if failed:
             msg = f"Failed to pause Eventstream source(s): {sorted(failed)}"
             raise Exception(msg)
 
-        # Missing, unknown, and transitional sources remain pending until they pause or time out
+        # Otherwise, sources remain pending until they pause or time out
         pending = {source_id for source_id in pending if statuses.get(source_id) != "paused"}
         if not pending:
             return
@@ -106,14 +106,17 @@ class EventstreamPublisher(ItemPublisher):
             return
 
         for item in items:
+            # Skip Eventstream items that have not been created in the workspace yet (source pause is irrelevant)
             if not item.guid:
                 continue
 
             running_sources = _get_running_sources(self.fabric_workspace_obj, item.guid)
             for source in running_sources:
                 _pause_source(self.fabric_workspace_obj, item.guid, source)
+                # Register the resume action for this source in the cleanup object
                 cleanup.add(partial(_resume_source, self.fabric_workspace_obj, item.guid, source))
 
+            # Wait for all running sources to be fully paused before proceeding
             if running_sources:
                 _wait_for_sources_paused(
                     self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]

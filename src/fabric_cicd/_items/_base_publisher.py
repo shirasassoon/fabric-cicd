@@ -405,7 +405,7 @@ class ItemPublisher(Publisher):
                         [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
-                # Apply each publisher's setup and teardown (e.g., pausing Eventstream sources) around bulk publishing
+                # Run each publisher's setup before publishing the batch and cleanup afterward
                 items_by_publisher: dict[ItemPublisher, list[Item]] = {}
                 for _item_name, item, publisher in batch_items:
                     items_by_publisher.setdefault(publisher, []).append(item)
@@ -607,8 +607,7 @@ class ItemPublisher(Publisher):
         """
         Run item-specific setup and guaranteed cleanup around publishing.
 
-        Item publishers customize the lifecycle through prepare_publish_items() and do
-        not need to implement a context manager themselves.
+        Item publishers customize the lifecycle through prepare_publish_items().
 
         Args:
             items: The Item objects of this type being published.
