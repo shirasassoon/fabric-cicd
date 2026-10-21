@@ -40,7 +40,7 @@ publish: # Publish configuration (optional)
   #   - "Run Hello World.DataPipeline"
   
   # shortcut_exclude_regex: "^DONT_DEPLOY_SHORTCUT.*"  # Regex pattern to exclude Lakehouse shortcuts from publishing (requires feature flags)
-  
+
   skip:  # Skip publishing for specific environments
     dev: true   # Skip publishing in dev environment
     test: false # Enable publishing in test environment
