@@ -22,8 +22,7 @@ class DeploymentPlanPublisher(ItemPublisher):
 
 
 def set_deployment_plan(
-    deployment_plan: Optional[str],
-    items_with_context: Sequence[tuple[str, Item, object]],
+    deployment_plan: Optional[str], items_with_context: Sequence[tuple[str, Item, object]]
 ) -> dict[str, object]:
     """Return the logical-ID plan option, or no options when no plan is selected."""
     if deployment_plan is None:

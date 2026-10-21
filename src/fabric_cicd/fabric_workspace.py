@@ -140,11 +140,11 @@ class FabricWorkspace:
         self.repository_directory: Path = validate_repository_directory(repository_directory)
         self.item_type_in_scope = validate_item_type_in_scope(item_type_in_scope)
         self.environment = validate_environment(environment)
+        self.deployment_plan: Optional[str] = None
         self.publish_item_name_exclude_regex = None
         self.publish_folder_path_exclude_regex = None
         self.publish_folder_path_to_include = None
         self.shortcut_exclude_regex = None
-        self.deployment_plan: Optional[str] = None
         self.items_to_include = None
         self.responses = None
         self.unpublish_responses = None
@@ -926,10 +926,6 @@ class FabricWorkspace:
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
             deployment_plan_options: Dictionary of bulk import API options that may include a valid deployment plan.
         """
-        options: dict[str, object] = {"allowPairingByName": True}
-        if deployment_plan_options is not None:
-            options.update(deployment_plan_options)
-
         # Prepare the definition parts for all items to be published in bulk
         definition_parts = []
         item_options_by_logical_id = []
@@ -943,13 +939,23 @@ class FabricWorkspace:
 
         logger.info(f"Publishing {len(items_with_context)} item(s) in bulk")
 
+        options: dict[str, object] = {"allowPairingByName": True}
+        # Apply deployment plan options if provided
+        if deployment_plan_options is not None:
+            options.update(deployment_plan_options)
+
+        # Apply item options by logical ID if provided
         if item_options_by_logical_id:
             options["itemOptionsByLogicalId"] = item_options_by_logical_id
+
+        url = f"{self.base_api_url}/items/bulkImportDefinitions"
+        if "deploymentPlan" in options:
+            url += "?beta=true"
 
         # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions
         response = self.endpoint.invoke(
             method="POST",
-            url=f"{self.base_api_url}/items/bulkImportDefinitions?beta=true",
+            url=url,
             body={
                 "definitionParts": definition_parts,
                 "options": options,

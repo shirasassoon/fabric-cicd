@@ -1787,11 +1787,19 @@ class TestBulkPublishDeploymentPlan:
 
         assert bodies == []
 
-    @pytest.mark.parametrize("name", ["", " ", 123, False])
-    def test_rejects_invalid_plan_name(self, mock_endpoint, temp_workspace_dir, name):
+    @pytest.mark.parametrize(
+        ("name", "message"),
+        [
+            ("", "non-empty string"),
+            (" ", "non-empty string"),
+            (123, "not of type string"),
+            (False, "not of type string"),
+        ],
+    )
+    def test_rejects_invalid_plan_name(self, mock_endpoint, temp_workspace_dir, name, message):
         with (
             patched_workspace(mock_endpoint, temp_workspace_dir) as ws,
-            pytest.raises(InputError, match="non-empty string"),
+            pytest.raises(InputError, match=message),
         ):
             publish.publish_all_items(ws, deployment_plan=name)
 
@@ -1813,7 +1821,7 @@ class TestBulkPublishDeploymentPlan:
                 "fabric_cicd._items._bulk_publish_dependencies.compute_publish_batches",
                 return_value=[[], []],
             ),
-            pytest.raises(InputError, match="single bulk publish batch"),
+            pytest.raises(InputError, match="Cannot apply 'deployment_plan' across multiple bulk publish batches"),
         ):
             publish.publish_all_items(ws, deployment_plan="Plan")
 

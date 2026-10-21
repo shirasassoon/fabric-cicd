@@ -123,7 +123,7 @@ The `publish` section is optional and controls item publishing behavior. If this
 
 ```yaml
 publish:
-    # Optional - name of the DeploymentPlan to apply (requires bulk publishing)
+    # Optional - name of the DeploymentPlan to apply (bulk publish mode only)
     deployment_plan: <plan_name>
 
     # Optional - pattern to exclude items from publishing (no feature flag required)
@@ -197,29 +197,18 @@ publish:
         <env..>: <bool_value>
 ```
 
-#### Deployment Plan Selection
+#### Deployment Plan Option
 
-Set `publish.deployment_plan` to the exact display name of a repository DeploymentPlan.
-The value may be a non-empty string or an environment mapping, as shown above.
-For programmatic deployment, pass the same optional setting to `publish_all_items()`:
+To apply a deployment plan during publishing, set `publish.deployment_plan` to the exact display name of a deployment plan item in the repository.
+Specify a non-empty string or an environment-specific mapping, as shown above.
+For programmatic deployment, use the optional `deployment_plan` argument:
 
 ```python
 publish_all_items(workspace, deployment_plan="My Deployment Plan")
 ```
 
-This requires the `enable_bulk_publish` and `enable_experimental_features` flags.
-Include `DeploymentPlan` in `item_types_in_scope` (or leave the scope unspecified).
-The selected plan must pass all item and folder filters and be included in the bulk
-request. It is referenced by its source-controlled logical ID with
-`referenceType: ByLogicalId`; it does not need to be deployed already.
-`allowPairingByName` remains `true` independently of plan selection. Other plans
-may also be published, but only the named plan is applied. Omitting
-`deployment_plan` applies no plan.
-
-Deployment plan selection is not supported with standard publishing or with
-parameter dependencies that split publishing into multiple batches. These cases,
-a missing/filtered plan, or a plan without a logical ID raise an error instead
-of silently publishing without the requested plan.
+This option currently requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled.
+Deployment plans cannot be applied automatically in standard publish mode or in bulk publish mode when parameter dependencies require multiple batches.
 
 ### Unpublish Settings
 

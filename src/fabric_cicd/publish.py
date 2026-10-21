@@ -56,7 +56,7 @@ def publish_all_items(
         folder_path_to_include: List of folder paths in the format "/folder_name"; only the specified folders and their items will be published.
         items_to_include: List of items in the format "item_name.item_type" that should be published.
         shortcut_exclude_regex: Regex pattern to exclude specific shortcuts from being published in lakehouses.
-        deployment_plan: Name of the repository DeploymentPlan item that is applied to the deployment. Only supported in a bulk publish.
+        deployment_plan: Name of the repository Deployment Plan item that is applied to the deployment. Supported in bulk publish mode only.
 
     Returns:
         Dict containing all API responses if the ``enable_response_collection`` feature flag is enabled
@@ -182,7 +182,7 @@ def publish_all_items(
         >>> notebook_response = workspace.responses["Notebook"]["Hello World"]
         >>> print(notebook_response["status_code"])  # e.g., 200
 
-        With get_changed_items (deploy only git-changed items)
+        With `get_changed_items` (deploy only git-changed items)
         >>> from fabric_cicd import FabricWorkspace, publish_all_items, get_changed_items
         >>> from azure.identity import AzureCliCredential
         >>> workspace = FabricWorkspace(
@@ -195,7 +195,7 @@ def publish_all_items(
         >>> if changed:
         ...     publish_all_items(workspace, items_to_include=changed)
 
-        With deployment plan (predefined sequence of item deployments and actions)
+        With a deployment plan (a Fabric item that specifies the deployment order and actions to execute between items):
         >>> from fabric_cicd import FabricWorkspace, publish_all_items, append_feature_flag
         >>> from azure.identity import AzureCliCredential
         >>> append_feature_flag("enable_experimental_features")
@@ -257,10 +257,9 @@ def publish_all_items(
 
         else:
             fabric_workspace_obj.bulk_publish_enabled = True
-            # If a deployment plan is specified, validate and assign it to the workspace object
+            # Validate and assign it to the workspace object, if provided
             if deployment_plan is not None:
-                validate_deployment_plan(deployment_plan)
-                fabric_workspace_obj.deployment_plan = deployment_plan
+                fabric_workspace_obj.deployment_plan = validate_deployment_plan(deployment_plan)
 
     # Apply selective deployment features
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:

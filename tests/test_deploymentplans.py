@@ -14,14 +14,20 @@ from fabric_cicd._common._validate_input import validate_deployment_plan
 from fabric_cicd._items._deploymentplans import DeploymentPlanPublisher, set_deployment_plan
 
 
-@pytest.mark.parametrize("name", [None, "Plan", " Plan "])
-def test_validate_deployment_plan_accepts_optional_name(name):
-    assert validate_deployment_plan(name) is None
+@pytest.mark.parametrize("name", ["Plan", " Plan "])
+def test_validate_deployment_plan_returns_valid_name(name):
+    assert validate_deployment_plan(name) == name
 
 
-@pytest.mark.parametrize("name", ["", " ", "\t\n", 123, False, [], {}])
-def test_validate_deployment_plan_rejects_invalid_name(name):
+@pytest.mark.parametrize("name", ["", " ", "\t\n"])
+def test_validate_deployment_plan_rejects_blank_name(name):
     with pytest.raises(InputError, match="'deployment_plan' must be a non-empty string"):
+        validate_deployment_plan(name)
+
+
+@pytest.mark.parametrize("name", [None, 123, False, [], {}])
+def test_validate_deployment_plan_rejects_non_string_name(name):
+    with pytest.raises(InputError, match="The provided deployment_plan is not of type string"):
         validate_deployment_plan(name)
 
 

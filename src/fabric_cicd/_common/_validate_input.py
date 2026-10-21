@@ -173,6 +173,23 @@ def validate_token_credential(input_value: TokenCredential) -> TokenCredential:
     return input_value
 
 
+def validate_deployment_plan(input_value: str) -> str:
+    """
+    Validate the deployment plan name.
+
+    Args:
+        input_value: The input value to validate.
+    """
+    # Validate the deployment plan input type.
+    validate_data_type("string", "deployment_plan", input_value)
+
+    if not input_value.strip():
+        msg = "'deployment_plan' must be a non-empty string."
+        raise InputError(msg, logger)
+
+    return input_value
+
+
 def validate_experimental_param(
     param_value: Optional[str],
     required_flag: "FeatureFlag",
@@ -292,13 +309,6 @@ def validate_shortcut_exclude_regex(shortcut_exclude_regex: Optional[str]) -> No
         warning_message="Shortcut exclusion is enabled.",
         risk_warning="Using shortcut_exclude_regex will selectively exclude shortcuts from being deployed to lakehouses. Use with caution.",
     )
-
-
-def validate_deployment_plan(deployment_plan: Optional[str]) -> None:
-    """Validate that an optional deployment plan name is a non-empty string."""
-    if deployment_plan is not None and (not isinstance(deployment_plan, str) or not deployment_plan.strip()):
-        msg = "'deployment_plan' must be a non-empty string."
-        raise InputError(msg, logger)
 
 
 def validate_git_compare_ref(git_compare_ref: str) -> str:

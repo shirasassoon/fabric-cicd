@@ -390,7 +390,7 @@ class ItemPublisher(Publisher):
 
             # Ensure that if a deployment plan is specified, all items are published in a single batch
             if fabric_workspace_obj.deployment_plan is not None and len(batches) > 1:
-                msg = "'deployment_plan' requires a single bulk publish batch; parameter dependencies produced multiple batches"
+                msg = "Cannot apply 'deployment_plan' across multiple bulk publish batches. Remove it or adjust parameter dependencies to use a single batch."
                 raise InputError(msg, logger)
 
             # Iterate over each batch and publish
