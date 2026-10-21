@@ -479,7 +479,7 @@ class ItemPublisher(Publisher):
 
         config = getattr(self.__class__, "parallel_config", ParallelConfig())
 
-        # Apply publisher-specific setup and teardown around standard publishing
+        # Run the publisher's setup before standard publishing and cleanup afterward
         with self.publish_items_context(list(items.values())):
             if config.ordered_items_func is not None:
                 order = config.ordered_items_func(self)
