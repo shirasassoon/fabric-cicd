@@ -921,14 +921,10 @@ class FabricWorkspace:
         """
         Publishes or updates items in bulk via the bulk import API.
 
-        The explicitly selected DeploymentPlan is referenced by logical ID in
-        the top-level options independently of pairing by name. It must be in the
-        batch but need not be deployed. Without a selection, no plan is applied.
-
         Args:
             items_with_context: A list of tuples containing item name, Item object, and publisher context required for processing the item files.
             skipped_items: Optional list of "Type: Name" strings for items skipped by publish filters.
-            deployment_plan_options: Plan options already resolved and validated by the bulk publisher.
+            deployment_plan_options: Dictionary of bulk import API options that may include a valid deployment plan.
         """
         options: dict[str, object] = {"allowPairingByName": True}
         if deployment_plan_options is not None:
@@ -953,7 +949,7 @@ class FabricWorkspace:
         # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions
         response = self.endpoint.invoke(
             method="POST",
-            url=f"{self.base_api_url}/items/bulkImportDefinitions",
+            url=f"{self.base_api_url}/items/bulkImportDefinitions?beta=true",
             body={
                 "definitionParts": definition_parts,
                 "options": options,

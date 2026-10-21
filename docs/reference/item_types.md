@@ -69,6 +69,11 @@
 - If you are using connections and expect them to change between different environments, then those need to be parameterized in the `parameter.yml` file.
 - The **executing identity** of the deployment must have access to the connections, or the deployment will fail.
 
+## Deployment Plan
+
+- **Parameterization:**
+    - The `find_replace` section in the `parameter.yml` file is not applied.
+
 ## Environment
 
 - **Parameterization:**

@@ -147,6 +147,7 @@ class ItemPublisher(Publisher):
         from fabric_cicd._items._databuildtooljob import DataBuildToolJobPublisher
         from fabric_cicd._items._dataflowgen2 import DataflowPublisher
         from fabric_cicd._items._datapipeline import DataPipelinePublisher
+        from fabric_cicd._items._deploymentplans import DeploymentPlanPublisher
         from fabric_cicd._items._environment import EnvironmentPublisher
         from fabric_cicd._items._eventhouse import EventhousePublisher
         from fabric_cicd._items._eventstream import EventstreamPublisher
@@ -207,6 +208,7 @@ class ItemPublisher(Publisher):
             ItemType.GRAPH_MODEL: GraphModelPublisher,
             ItemType.ORG_APP: OrgAppPublisher,
             ItemType.ORG_APP_AUDIENCE: OrgAppAudiencePublisher,
+            ItemType.DEPLOYMENT_PLAN: DeploymentPlanPublisher,
         }
 
         publisher_class = publisher_mapping.get(item_type)
@@ -330,9 +332,9 @@ class ItemPublisher(Publisher):
             compute_publish_batches,
             get_async_attributes_to_wait_for,
         )
+        from fabric_cicd._items._deploymentplans import set_deployment_plan
 
         publishers: list[ItemPublisher] = []
-        from fabric_cicd._items._deploymentplans import set_deployment_plan
         items_with_context: list[tuple[str, Item, ItemPublisher]] = []
         skipped_items: list[str] = []
 
@@ -363,10 +365,11 @@ class ItemPublisher(Publisher):
             items_with_context.extend(publishable_items)
             publishers.append(publisher)
 
-        # Phase 2: Batched bulk API calls (publisher context used inside for per-item transforms)
-        if items_with_context:
+        # Set the deployment plan, if specified
         deployment_plan_options = set_deployment_plan(fabric_workspace_obj.deployment_plan, items_with_context)
 
+        # Phase 2: Batched bulk API calls (publisher context used inside for per-item transforms)
+        if items_with_context:
             if skipped_items:
                 logger.info(f"Skipping {len(skipped_items)} item(s) due to publish filters")
 
@@ -385,10 +388,12 @@ class ItemPublisher(Publisher):
 
             batches = compute_publish_batches(items_with_context, dependency_edges, logical_id_links)
 
-            # Iterate over each batch and publish
+            # Ensure that if a deployment plan is specified, all items are published in a single batch
             if fabric_workspace_obj.deployment_plan is not None and len(batches) > 1:
-                msg = "'deployment_plan' requires a single bulk publish batch; parameter dependencies produced multiple batches."
+                msg = "'deployment_plan' requires a single bulk publish batch; parameter dependencies produced multiple batches"
                 raise InputError(msg, logger)
+
+            # Iterate over each batch and publish
             for batch_index, batch_items in enumerate(batches):
                 if len(batches) > 1:
                     logger.info(f"Publishing batch {batch_index + 1}/{len(batches)}")
