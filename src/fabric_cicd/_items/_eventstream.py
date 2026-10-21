@@ -27,7 +27,7 @@ def _get_topology_sources(fabric_workspace_obj: FabricWorkspace, eventstream_gui
         method="GET",
         url=f"{fabric_workspace_obj.base_api_url}/eventstreams/{eventstream_guid}/topology",
     )
-    return response["body"].get("sources", []) or []
+    return response["body"].get("sources", [])
 
 
 def _get_running_sources(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str) -> list[dict]:
