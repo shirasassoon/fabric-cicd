@@ -195,7 +195,7 @@ def publish_all_items(
         >>> if changed:
         ...     publish_all_items(workspace, items_to_include=changed)
 
-        With a deployment plan (a Fabric item that specifies the deployment order and actions to execute between items):
+        With a deployment plan
         >>> from fabric_cicd import FabricWorkspace, publish_all_items, append_feature_flag
         >>> from azure.identity import AzureCliCredential
         >>> append_feature_flag("enable_experimental_features")

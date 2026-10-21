@@ -199,17 +199,12 @@ publish:
 
 #### Deployment Plan Option
 
-To apply a deployment plan during publishing, set `publish.deployment_plan` to the exact display name of a deployment plan item in the repository.
-Specify a non-empty string or an environment-specific mapping, as shown above.
-For programmatic deployment, use the optional `deployment_plan` argument:
-
-```python
-publish_all_items(workspace, deployment_plan="My Deployment Plan")
-```
+To apply a deployment plan during publishing, set `publish.deployment_plan` to the exact display name of a deployment plan item in the repository. Specify a non-empty string or an environment-specific mapping, as shown above.
 
 !!! note
 
     - This option currently requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled.
+    - `DeploymentPlan` must be included in `core.item_types_in_scope`, and the selected plan must not be excluded by publish filters.
     - Deployment plans cannot be applied automatically in standard publish mode or in bulk publish mode when parameter dependencies require multiple batches.
 
 ### Unpublish Settings
