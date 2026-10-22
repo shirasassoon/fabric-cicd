@@ -368,15 +368,14 @@ def test_standard_publish_failure_survives_resume_failure(mocker, caplog):
     assert "Resume failed" in caplog.text
 
 
-@pytest.mark.parametrize("resume_recovers", [False, True])
-def test_pause_timeout_retries_resume_conflict_without_masking_timeout(resume_recovers, mocker, caplog):
-    """Cleanup gets its own retry budget after pause polling exhausts its budget."""
+def test_pause_timeout_survives_single_resume_conflict(mocker, caplog):
+    """A failed resume is logged without retrying or replacing the pause timeout."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     publisher, workspace = _make_publisher()
     pause_timeout = TimeoutError("Original pause timeout")
     retry = mocker.patch(
         "fabric_cicd._items._eventstream.handle_retry",
-        side_effect=[pause_timeout, None, TimeoutError("Resume retry timeout")],
+        side_effect=pause_timeout,
     )
     paused = False
     resume_attempts = 0
@@ -390,13 +389,11 @@ def test_pause_timeout_retries_resume_conflict_without_masking_timeout(resume_re
             paused = True
         elif url.endswith("/resume"):
             resume_attempts += 1
-            if resume_attempts == 1 or not resume_recovers:
-                error = InvokeError(
-                    "Source is still transitioning",
-                    logging.getLogger(__name__),
-                    additional_info='{"errorCode": "DataSourceStatusConflict"}',
-                )
-                raise error
+            error = InvokeError(
+                "DataSourceStatusConflict: source is still transitioning",
+                logging.getLogger(__name__),
+            )
+            raise error
         return {"body": {}}
 
     workspace.endpoint.invoke.side_effect = invoke
@@ -404,20 +401,20 @@ def test_pause_timeout_retries_resume_conflict_without_masking_timeout(resume_re
         pytest.fail("Publishing must not start after pause timeout")
 
     assert raised.value is pause_timeout
-    assert resume_attempts == 2
-    assert retry.call_count == (2 if resume_recovers else 3)
-    if not resume_recovers:
-        assert "Resume retry timeout" in caplog.text
+    assert resume_attempts == 1
+    retry.assert_called_once()
+    assert "DataSourceStatusConflict" in caplog.text
 
 
-def test_resume_does_not_retry_other_api_failures(mocker):
-    """Only transitional-state conflicts are retried."""
+@pytest.mark.parametrize("error_message", ["Access denied", "DataSourceStatusConflict"])
+def test_resume_does_not_retry_api_failures(error_message, mocker):
+    """Resume attempts once, including when the source is still transitioning."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     publisher, workspace = _make_publisher(
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
     )
     invoke = workspace.endpoint.invoke.side_effect
-    error = InvokeError("Access denied", logging.getLogger(__name__))
+    error = InvokeError(error_message, logging.getLogger(__name__))
     retry = mocker.patch("fabric_cicd._items._eventstream.handle_retry")
 
     def fail_resume(method, url, **kwargs):
@@ -430,43 +427,9 @@ def test_resume_does_not_retry_other_api_failures(mocker):
         pass
 
     assert raised.value is error
-    retry.assert_not_called()
-
-
-def test_resume_conflict_retries_stop_at_cleanup_deadline(monkeypatch, mocker):
-    """Persistent conflicts fail at the configured retry deadline rather than looping forever."""
-    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
-    publisher, workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-    clock = {"now": 0.0}
-    monkeypatch.setattr(constants, "RETRY_MAX_DURATION_SECONDS", 2)
-    monkeypatch.setenv("FABRIC_CICD_RETRY_DELAY_OVERRIDE_SECONDS", "1")
-    mocker.patch("fabric_cicd._items._eventstream.time.time", side_effect=lambda: clock["now"])
-
-    def advance_time(delay):
-        clock["now"] += delay
-
-    sleep = mocker.patch("fabric_cicd._items._eventstream.time.sleep", side_effect=advance_time)
-    invoke = workspace.endpoint.invoke.side_effect
-
-    def conflict_on_resume(method, url, **kwargs):
-        if url.endswith("/resume"):
-            error = InvokeError("DataSourceStatusConflict", logging.getLogger(__name__))
-            raise error
-        return invoke(method, url, **kwargs)
-
-    workspace.endpoint.invoke.side_effect = conflict_on_resume
-    with (
-        pytest.raises(Exception, match=r"Maximum execution duration \(2 seconds\) exceeded"),
-        publisher.publish_items_context([_make_item()]),
-    ):
-        pass
-
     resume_calls = [call for call in workspace.endpoint.invoke.call_args_list if call.kwargs["url"].endswith("/resume")]
-    assert len(resume_calls) == 3
-    assert sleep.call_count == 2
-    assert clock["now"] == 2.0
+    assert len(resume_calls) == 1
+    retry.assert_not_called()
 
 
 def test_flag_on_new_eventstream_without_guid_skips_pause():

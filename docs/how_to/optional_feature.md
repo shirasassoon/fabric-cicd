@@ -26,6 +26,11 @@ append_feature_flag("<specific_flag>")
 | `disable_workspace_folder_publish`        | Disable deploying workspace sub folders                                                                                                                                                                |              |
 | `enable_environment_variable_replacement` | Enable the use of pipeline variables for parameterization                                                                                                                                              |              |
 
+With `enable_eventstream_source_pause`, cleanup attempts to resume each paused source once.
+Resume conflicts are not retried. Failures are logged without replacing an existing publish or
+pause error; a resume failure after otherwise successful publishing fails the deployment.
+If a source remains paused, manual recovery may be required.
+
 <span class="md-h3-nonanchor">Unpublish behavior</span>
 
 | Flag Name                           | Description                                                                                        |
