@@ -96,6 +96,10 @@
   It pauses running sources before updating the definition and resumes them afterward, preventing
   Fabric from rejecting the update. Eventstreams excluded by item selection, name, or folder filters
   are not queried, paused, or resumed.
+- Resume retries transitional-state conflicts within a separate bounded cleanup retry period.
+  Cleanup failures are logged without replacing a publish or pause error already in progress.
+  If publishing otherwise succeeds, a resume failure fails the deployment. Check failed-resume logs
+  for sources that may need manual recovery.
 
 ## Graph Model
 

@@ -10,6 +10,7 @@ from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
+from types import TracebackType
 from typing import Callable, Optional
 
 from fabric_cicd import constants
@@ -49,8 +50,21 @@ class PublishItemsCleanup:
         self._exit_stack = exit_stack
 
     def add(self, action: Callable[[], None]) -> None:
-        """Register a cleanup action to run when the publish lifecycle exits."""
-        self._exit_stack.callback(action)
+        """Run cleanup on exit, logging failures without replacing an active error."""
+
+        def run_cleanup(
+            _exc_type: Optional[type[BaseException]],
+            exc: Optional[BaseException],
+            _traceback: Optional[TracebackType],
+        ) -> None:
+            try:
+                action()
+            except Exception:
+                logger.exception("Failed to clean up after item publishing")
+                if exc is None:
+                    raise
+
+        self._exit_stack.push(run_cleanup)
 
 
 class Publisher(ABC):
@@ -487,19 +501,23 @@ class ItemPublisher(Publisher):
         config = getattr(self.__class__, "parallel_config", ParallelConfig())
 
         # Run the publisher's setup before standard publishing and cleanup afterward
-        with self.publish_items_context(list(items.values())):
-            if config.ordered_items_func is not None:
-                order = config.ordered_items_func(self)
-                errors = self._publish_items_ordered(items, order)
-            elif config.enabled:
-                errors = self._publish_items_parallel(items)
-            else:
-                errors = self._publish_items_sequential(items)
+        try:
+            with self.publish_items_context(list(items.values())):
+                if config.ordered_items_func is not None:
+                    order = config.ordered_items_func(self)
+                    errors = self._publish_items_ordered(items, order)
+                elif config.enabled:
+                    errors = self._publish_items_parallel(items)
+                else:
+                    errors = self._publish_items_sequential(items)
+
+                if errors:
+                    raise PublishError(errors, logger)
+        except PublishError:
+            self.post_publish_all()
+            raise
 
         self.post_publish_all()
-
-        if errors:
-            raise PublishError(errors, logger)
 
     def publish_one(self, item_name: str, _item: "Item") -> None:
         """

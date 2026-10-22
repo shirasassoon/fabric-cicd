@@ -8,6 +8,7 @@ import time
 from functools import partial
 
 from fabric_cicd import FabricWorkspace, constants
+from fabric_cicd._common._exceptions import InvokeError
 from fabric_cicd._common._fabric_endpoint import handle_retry
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher, PublishItemsCleanup
@@ -84,15 +85,33 @@ def _pause_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, 
 
 
 def _resume_source(fabric_workspace_obj: FabricWorkspace, eventstream_guid: str, source: dict) -> None:
-    """Resume a single eventstream source from where it was last stopped."""
+    """Resume a source, retrying transitional-state conflicts within a fresh cleanup budget."""
     source_name = source.get("name", source["id"])
     logger.info(f"{constants.INDENT}Resuming Eventstream source '{source_name}'")
     # https://learn.microsoft.com/en-us/rest/api/fabric/eventstream/topology/resume-eventstream-source
-    fabric_workspace_obj.endpoint.invoke(
-        method="POST",
-        url=f"{fabric_workspace_obj.base_api_url}/eventstreams/{eventstream_guid}/sources/{source['id']}/resume",
-        body={"startType": "WhenLastStopped"},
-    )
+    start_time = time.time()
+    attempt = 0
+    while True:
+        try:
+            fabric_workspace_obj.endpoint.invoke(
+                method="POST",
+                url=f"{fabric_workspace_obj.base_api_url}/eventstreams/{eventstream_guid}/sources/{source['id']}/resume",
+                body={"startType": "WhenLastStopped"},
+            )
+            return
+        except InvokeError as error:
+            # Endpoint errors keep the response error code in additional_info.
+            if "DataSourceStatusConflict" not in f"{error} {error.additional_info or ''}":
+                raise
+            handle_retry(
+                attempt=attempt,
+                base_delay=2,
+                response_retry_after=20,
+                prepend_message=f"{constants.INDENT}Waiting to resume Eventstream source '{source_name}'.",
+                max_duration=constants.RETRY_MAX_DURATION_SECONDS,
+                start_time=start_time,
+            )
+            attempt += 1
 
 
 class EventstreamPublisher(ItemPublisher):

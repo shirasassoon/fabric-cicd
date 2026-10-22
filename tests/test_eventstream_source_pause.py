@@ -3,11 +3,13 @@
 
 """Tests for the enable_eventstream_source_pause feature flag on Eventstream definition updates."""
 
+import logging
 from unittest.mock import MagicMock
 
 import pytest
 
 from fabric_cicd import FabricWorkspace, constants, get_supported_feature_flags
+from fabric_cicd._common._exceptions import InvokeError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher, ParallelConfig
 from fabric_cicd._items._eventstream import EventstreamPublisher
@@ -296,6 +298,175 @@ def test_flag_on_publish_fails_sources_are_still_resumed():
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
     assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls)
     assert any(url.endswith(f"/sources/{SOURCE_ID}/resume") for url in urls)
+
+
+@pytest.mark.parametrize("publish_fails", [False, True])
+def test_resume_failures_are_logged_without_masking_publish_error(publish_fails, caplog):
+    """All resumes are attempted; cleanup failures only propagate without a publish error."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[
+            {"id": "source-1", "name": "SourceOne", "status": "Running"},
+            {"id": "source-2", "name": "SourceTwo", "status": "Running"},
+        ],
+    )
+    invoke = workspace.endpoint.invoke.side_effect
+    resume_errors = []
+
+    def fail_resume(method, url, **kwargs):
+        if url.endswith("/resume"):
+            error = InvokeError(f"Resume failed for {url}", logging.getLogger(__name__))
+            resume_errors.append(error)
+            raise error
+        return invoke(method, url, **kwargs)
+
+    workspace.endpoint.invoke.side_effect = fail_resume
+    publish_error = RuntimeError("Original publish failure")
+
+    def publish():
+        if publish_fails:
+            raise publish_error
+
+    with pytest.raises((RuntimeError, InvokeError)) as raised, publisher.publish_items_context([_make_item()]):
+        publish()
+
+    assert len(resume_errors) == 2
+    assert raised.value is (publish_error if publish_fails else resume_errors[0])
+    assert "source-1" in caplog.text
+    assert "source-2" in caplog.text
+    assert "Resume failed" in caplog.text
+
+
+def test_standard_publish_failure_survives_resume_failure(mocker, caplog):
+    """Collected standard-publish errors remain primary when cleanup also fails."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+    item = _make_item()
+    workspace.repository_items = {ItemType.EVENTSTREAM.value: {item.name: item}}
+    workspace.items_to_include = None
+    workspace._apply_publish_filters.return_value = False
+    invoke = workspace.endpoint.invoke.side_effect
+
+    def fail_resume(method, url, **kwargs):
+        if url.endswith("/resume"):
+            error = InvokeError("Resume failed", logging.getLogger(__name__))
+            raise error
+        return invoke(method, url, **kwargs)
+
+    workspace.endpoint.invoke.side_effect = fail_resume
+    publish_error = RuntimeError("Original publish failure")
+    mocker.patch.object(publisher, "publish_one", side_effect=publish_error)
+    post_publish = mocker.patch.object(publisher, "post_publish_all")
+
+    with pytest.raises(PublishError) as raised:
+        publisher.publish_all()
+
+    assert raised.value.errors == [(item.name, publish_error)]
+    post_publish.assert_called_once_with()
+    assert "Resume failed" in caplog.text
+
+
+@pytest.mark.parametrize("resume_recovers", [False, True])
+def test_pause_timeout_retries_resume_conflict_without_masking_timeout(resume_recovers, mocker, caplog):
+    """Cleanup gets its own retry budget after pause polling exhausts its budget."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher()
+    pause_timeout = TimeoutError("Original pause timeout")
+    retry = mocker.patch(
+        "fabric_cicd._items._eventstream.handle_retry",
+        side_effect=[pause_timeout, None, TimeoutError("Resume retry timeout")],
+    )
+    paused = False
+    resume_attempts = 0
+
+    def invoke(method, url, **_kwargs):
+        nonlocal paused, resume_attempts
+        if method == "GET":
+            status = "Pausing" if paused else "Running"
+            return {"body": {"sources": [{"id": SOURCE_ID, "name": "MySource", "status": status}]}}
+        if url.endswith("/pause"):
+            paused = True
+        elif url.endswith("/resume"):
+            resume_attempts += 1
+            if resume_attempts == 1 or not resume_recovers:
+                error = InvokeError(
+                    "Source is still transitioning",
+                    logging.getLogger(__name__),
+                    additional_info='{"errorCode": "DataSourceStatusConflict"}',
+                )
+                raise error
+        return {"body": {}}
+
+    workspace.endpoint.invoke.side_effect = invoke
+    with pytest.raises(TimeoutError) as raised, publisher.publish_items_context([_make_item()]):
+        pytest.fail("Publishing must not start after pause timeout")
+
+    assert raised.value is pause_timeout
+    assert resume_attempts == 2
+    assert retry.call_count == (2 if resume_recovers else 3)
+    if not resume_recovers:
+        assert "Resume retry timeout" in caplog.text
+
+
+def test_resume_does_not_retry_other_api_failures(mocker):
+    """Only transitional-state conflicts are retried."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+    invoke = workspace.endpoint.invoke.side_effect
+    error = InvokeError("Access denied", logging.getLogger(__name__))
+    retry = mocker.patch("fabric_cicd._items._eventstream.handle_retry")
+
+    def fail_resume(method, url, **kwargs):
+        if url.endswith("/resume"):
+            raise error
+        return invoke(method, url, **kwargs)
+
+    workspace.endpoint.invoke.side_effect = fail_resume
+    with pytest.raises(InvokeError) as raised, publisher.publish_items_context([_make_item()]):
+        pass
+
+    assert raised.value is error
+    retry.assert_not_called()
+
+
+def test_resume_conflict_retries_stop_at_cleanup_deadline(monkeypatch, mocker):
+    """Persistent conflicts fail at the configured retry deadline rather than looping forever."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+    clock = {"now": 0.0}
+    monkeypatch.setattr(constants, "RETRY_MAX_DURATION_SECONDS", 2)
+    monkeypatch.setenv("FABRIC_CICD_RETRY_DELAY_OVERRIDE_SECONDS", "1")
+    mocker.patch("fabric_cicd._items._eventstream.time.time", side_effect=lambda: clock["now"])
+
+    def advance_time(delay):
+        clock["now"] += delay
+
+    sleep = mocker.patch("fabric_cicd._items._eventstream.time.sleep", side_effect=advance_time)
+    invoke = workspace.endpoint.invoke.side_effect
+
+    def conflict_on_resume(method, url, **kwargs):
+        if url.endswith("/resume"):
+            error = InvokeError("DataSourceStatusConflict", logging.getLogger(__name__))
+            raise error
+        return invoke(method, url, **kwargs)
+
+    workspace.endpoint.invoke.side_effect = conflict_on_resume
+    with (
+        pytest.raises(Exception, match=r"Maximum execution duration \(2 seconds\) exceeded"),
+        publisher.publish_items_context([_make_item()]),
+    ):
+        pass
+
+    resume_calls = [call for call in workspace.endpoint.invoke.call_args_list if call.kwargs["url"].endswith("/resume")]
+    assert len(resume_calls) == 3
+    assert sleep.call_count == 2
+    assert clock["now"] == 2.0
 
 
 def test_flag_on_new_eventstream_without_guid_skips_pause():
