@@ -5,6 +5,7 @@
 
 import logging
 from abc import ABC, abstractmethod
+from collections import defaultdict
 from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack, contextmanager
@@ -405,14 +406,14 @@ class ItemPublisher(Publisher):
                         [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
-                # Run each publisher's setup before publishing the batch and cleanup afterward
-                items_by_publisher: dict[ItemPublisher, list[Item]] = {}
-                for _item_name, item, publisher in batch_items:
-                    items_by_publisher.setdefault(publisher, []).append(item)
+                # Group items so each publisher runs setup once per batch and cleanup afterward
+                items_by_publisher: dict[ItemPublisher, list[Item]] = defaultdict(list)
+                for _, item, publisher in batch_items:
+                    items_by_publisher[publisher].append(item)
 
                 with ExitStack() as batch_stack:
-                    for publisher, publisher_items in items_by_publisher.items():
-                        batch_stack.enter_context(publisher.publish_items_context(publisher_items))
+                    for publisher, items in items_by_publisher.items():
+                        batch_stack.enter_context(publisher.publish_items_context(items))
 
                     fabric_workspace_obj._publish_items(
                         batch_items, skipped_items=skipped_items if batch_index == 0 else None
