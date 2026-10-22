@@ -10,7 +10,6 @@ from collections.abc import Generator
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
-from types import TracebackType
 from typing import Callable, Optional
 
 from fabric_cicd import constants
@@ -41,30 +40,6 @@ class ParallelConfig:
     enabled: bool = True
     max_workers: Optional[int] = PARALLEL_MAX_WORKERS
     ordered_items_func: Optional[Callable[["ItemPublisher"], list[str]]] = None
-
-
-class PublishItemsCleanup:
-    """Register cleanup actions that must run after item publishing."""
-
-    def __init__(self, exit_stack: ExitStack) -> None:
-        self._exit_stack = exit_stack
-
-    def add(self, action: Callable[[], None]) -> None:
-        """Run cleanup on exit, logging failures without replacing an active error."""
-
-        def run_cleanup(
-            _exc_type: Optional[type[BaseException]],
-            exc: Optional[BaseException],
-            _traceback: Optional[TracebackType],
-        ) -> None:
-            try:
-                action()
-            except Exception:
-                logger.exception("Failed to clean up after item publishing")
-                if exc is None:
-                    raise
-
-        self._exit_stack.push(run_cleanup)
 
 
 class Publisher(ABC):
@@ -420,15 +395,8 @@ class ItemPublisher(Publisher):
                         [f"{item.type}: {item_name}" for item_name, item, _publisher in batch_items],
                     )
 
-                # Group items so each publisher runs setup once per batch and cleanup afterward
-                items_by_publisher: dict[ItemPublisher, list[Item]] = defaultdict(list)
-                for _, item, publisher in batch_items:
-                    items_by_publisher[publisher].append(item)
-
-                with ExitStack() as batch_stack:
-                    for publisher, items in items_by_publisher.items():
-                        batch_stack.enter_context(publisher.publish_items_context(items))
-
+                # Publish the current batch within the batch publish context
+                with ItemPublisher._batch_publish_context(batch_items):
                     fabric_workspace_obj._publish_items(
                         batch_items, skipped_items=skipped_items if batch_index == 0 else None
                     )
@@ -502,7 +470,7 @@ class ItemPublisher(Publisher):
 
         # Run the publisher's setup before standard publishing and cleanup afterward
         try:
-            with self.publish_items_context(list(items.values())):
+            with self.publish_context(list(items.values())):
                 if config.ordered_items_func is not None:
                     order = config.ordered_items_func(self)
                     errors = self._publish_items_ordered(items, order)
@@ -610,37 +578,52 @@ class ItemPublisher(Publisher):
         """
         pass
 
-    def prepare_publish_items(
-        self,
-        items: list["Item"],
-        cleanup: PublishItemsCleanup,  # noqa: ARG002
-    ) -> None:
-        """
-        Perform item-specific setup and register any required cleanup actions.
-
-        The default is a no-op. Subclasses can override this method to prepare external
-        state before publishing and register cleanup actions that must run afterward.
-
-        Args:
-            items: The Item objects of this type being published.
-            cleanup: Registry for cleanup actions that must run when publishing exits.
-        """
-        pass
-
     @contextmanager
-    def publish_items_context(self, items: list["Item"]) -> Generator[None, None, None]:
+    def publish_context(self, items: list["Item"]) -> Generator[None, None, None]:  # noqa: ARG002
         """
-        Run item-specific setup and guaranteed cleanup around publishing.
+        Wrap standard publishing or a bulk batch in item-specific setup and cleanup.
 
-        Item publishers customize the lifecycle through prepare_publish_items().
+        The default is a no-op. Subclasses can use _publishing_lifecycle() with their
+        setup and cleanup functions to preserve active errors when cleanup fails.
 
         Args:
             items: The Item objects of this type being published.
         """
-        with ExitStack() as exit_stack:
-            cleanup = PublishItemsCleanup(exit_stack)
-            self.prepare_publish_items(items, cleanup)
+        yield
+
+    @staticmethod
+    @contextmanager
+    def _batch_publish_context(
+        batch_items: list[tuple[str, Item, "ItemPublisher"]],
+    ) -> Generator[None, None, None]:
+        """Enter each publisher's context once per batch and exit them in reverse order."""
+        items_by_publisher: dict[ItemPublisher, list[Item]] = defaultdict(list)
+        for _, item, publisher in batch_items:
+            items_by_publisher[publisher].append(item)
+
+        with ExitStack() as batch_stack:
+            for publisher, items in items_by_publisher.items():
+                batch_stack.enter_context(publisher.publish_context(items))
             yield
+
+    @staticmethod
+    @contextmanager
+    def _publishing_lifecycle(setup: Callable[[], None], cleanup: Callable[[], None]) -> Generator[None, None, None]:
+        """Run setup and always attempt cleanup without masking setup or publish errors."""
+        operation_failed = False
+        try:
+            setup()
+            yield
+        except BaseException:
+            operation_failed = True
+            raise
+        finally:
+            try:
+                cleanup()
+            except Exception:
+                logger.exception("Failed to clean up after item publishing")
+                if not operation_failed:
+                    raise
 
     def post_publish_all_check(self) -> None:
         """

@@ -5,12 +5,14 @@
 
 import logging
 import time
-from functools import partial
+from collections.abc import Generator
+from contextlib import contextmanager
+from typing import Optional
 
 from fabric_cicd import FabricWorkspace, constants
 from fabric_cicd._common._fabric_endpoint import handle_retry
 from fabric_cicd._common._item import Item
-from fabric_cicd._items._base_publisher import ItemPublisher, PublishItemsCleanup
+from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd.constants import FeatureFlag, ItemType
 
 logger = logging.getLogger(__name__)
@@ -100,24 +102,47 @@ class EventstreamPublisher(ItemPublisher):
 
     item_type = ItemType.EVENTSTREAM.value
 
-    def prepare_publish_items(self, items: list[Item], cleanup: PublishItemsCleanup) -> None:
-        """Pause running sources and register their resume actions."""
+    @contextmanager
+    def publish_context(self, items: list[Item]) -> Generator[None, None, None]:
+        """Pause deployed sources before either publish path and attempt all resumes on exit."""
         if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG:
+            yield
             return
 
-        for item in items:
-            # Skip Eventstream items that have not been created in the workspace yet (source pause is irrelevant)
-            if not item.guid:
-                continue
+        paused_sources: list[tuple[str, dict]] = []
 
-            running_sources = _get_running_sources(self.fabric_workspace_obj, item.guid)
-            for source in running_sources:
-                _pause_source(self.fabric_workspace_obj, item.guid, source)
-                # Register the resume action for this source in the cleanup object
-                cleanup.add(partial(_resume_source, self.fabric_workspace_obj, item.guid, source))
+        def setup() -> None:
+            # Skip items that do not exist yet
+            for item in items:
+                if not item.guid:
+                    continue
+                running_sources = _get_running_sources(self.fabric_workspace_obj, item.guid)
+                for source in running_sources:
+                    # Pause each running source and track it for later resumption
+                    _pause_source(self.fabric_workspace_obj, item.guid, source)
+                    paused_sources.append((item.guid, source))
+                # Wait for all running sources to be paused before continuing
+                if running_sources:
+                    _wait_for_sources_paused(
+                        self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
+                    )
 
-            # Wait for all running sources to be fully paused before proceeding
-            if running_sources:
-                _wait_for_sources_paused(
-                    self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
-                )
+        def cleanup() -> None:
+            resume_error: Optional[Exception] = None
+            # Resume all previously paused sources, capturing any errors
+            for eventstream_guid, source in paused_sources:
+                try:
+                    _resume_source(self.fabric_workspace_obj, eventstream_guid, source)
+                except Exception as error:
+                    logger.exception(
+                        "Failed to resume Eventstream source '%s' in Eventstream '%s'",
+                        source["id"],
+                        eventstream_guid,
+                    )
+                    if resume_error is None:
+                        resume_error = error
+            if resume_error is not None:
+                raise resume_error
+
+        with self._publishing_lifecycle(setup, cleanup):
+            yield
