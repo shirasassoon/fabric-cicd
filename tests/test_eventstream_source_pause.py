@@ -7,9 +7,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from fabric_cicd import constants, get_supported_feature_flags
+from fabric_cicd import FabricWorkspace, constants, get_supported_feature_flags
 from fabric_cicd._common._item import Item
-from fabric_cicd._items._base_publisher import ItemPublisher
+from fabric_cicd._items._base_publisher import ItemPublisher, ParallelConfig
 from fabric_cicd._items._eventstream import EventstreamPublisher
 from fabric_cicd.constants import FeatureFlag, ItemType
 
@@ -309,6 +309,74 @@ def test_flag_on_new_eventstream_without_guid_skips_pause():
         pass
 
     workspace.endpoint.invoke.assert_not_called()
+
+
+@pytest.mark.parametrize("filter_type", ["name", "folder_exclude", "folder_include"])
+@pytest.mark.parametrize("include_publishable_item", [False, True])
+@pytest.mark.parametrize("publish_mode", ["parallel", "sequential", "ordered"])
+def test_standard_publish_filters_eventstreams_before_setup(
+    filter_type, include_publishable_item, publish_mode, mocker
+):
+    """Excluded Eventstreams never enter setup or publishing, even alongside included items."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, mock_workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+    workspace = FabricWorkspace.__new__(FabricWorkspace)
+    workspace._api_root_url = "https://api.example.com"
+    workspace.workspace_id = EVENTSTREAM_GUID
+    workspace.endpoint = mock_workspace.endpoint
+    workspace.items_to_include = None
+    workspace.bulk_publish_enabled = False
+    workspace.publish_item_name_exclude_regex = "^MyEventstream$" if filter_type == "name" else None
+    workspace.publish_folder_path_exclude_regex = "^Excluded$" if filter_type == "folder_exclude" else None
+    workspace.publish_folder_path_to_include = ["Included"] if filter_type == "folder_include" else None
+
+    excluded_item = _make_item()
+    excluded_item.folder_path = "Excluded"
+    included_item = Item(
+        type=ItemType.EVENTSTREAM.value,
+        name="IncludedEventstream",
+        description="",
+        guid="966a66bd-74b3-4bc5-a34d-6878ca1a40d1",
+        folder_path="Included",
+    )
+    items = {excluded_item.name: excluded_item}
+    if include_publishable_item:
+        items[included_item.name] = included_item
+    workspace.repository_items = {ItemType.EVENTSTREAM.value: items}
+    publisher.fabric_workspace_obj = workspace
+    mocker.patch.object(
+        EventstreamPublisher,
+        "parallel_config",
+        ParallelConfig(
+            enabled=publish_mode == "parallel",
+            ordered_items_func=(lambda _publisher: list(items)) if publish_mode == "ordered" else None,
+        ),
+    )
+    mocker.patch.object(publisher, "pre_publish_all")
+    post_publish = mocker.patch.object(publisher, "post_publish_all")
+    publish_one = mocker.patch.object(publisher, "publish_one")
+    context = mocker.spy(publisher, "publish_items_context")
+
+    publisher.publish_all()
+
+    assert excluded_item.skip_publish is True
+    assert workspace.repository_items[ItemType.EVENTSTREAM.value] == items
+    post_publish.assert_called_once_with()
+    if include_publishable_item:
+        assert included_item.skip_publish is False
+        context.assert_called_once_with([included_item])
+        publish_one.assert_called_once_with(included_item.name, included_item)
+        urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
+        assert urls
+        assert all(f"/eventstreams/{included_item.guid}/" in url for url in urls)
+        assert any(url.endswith("/pause") for url in urls)
+        assert any(url.endswith("/resume") for url in urls)
+    else:
+        context.assert_not_called()
+        publish_one.assert_not_called()
+        workspace.endpoint.invoke.assert_not_called()
 
 
 def test_base_publish_items_context_is_noop():

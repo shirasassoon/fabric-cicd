@@ -94,7 +94,8 @@
 - **Note** when deploying Eventstream items with private endpoint sources, enable the
   [`enable_eventstream_source_pause`](../how_to/optional_feature.md#feature-flags) feature flag.
   It pauses running sources before updating the definition and resumes them afterward, preventing
-  Fabric from rejecting the update.
+  Fabric from rejecting the update. Eventstreams excluded by item selection, name, or folder filters
+  are not queried, paused, or resumed.
 
 ## Graph Model
 
