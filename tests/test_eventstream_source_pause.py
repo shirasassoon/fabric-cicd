@@ -67,6 +67,28 @@ def _make_publisher(topology_sources=None):
     return publisher, workspace
 
 
+@pytest.fixture
+def orchestration_publisher():
+    publisher, mock_workspace = _make_publisher(
+        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
+    )
+    workspace = FabricWorkspace.__new__(FabricWorkspace)
+    workspace._api_root_url = "https://api.example.com"
+    workspace.workspace_id = EVENTSTREAM_GUID
+    workspace.endpoint = mock_workspace.endpoint
+    workspace.items_to_include = None
+    workspace.item_type_in_scope = [ItemType.EVENTSTREAM.value]
+    workspace.bulk_publish_enabled = False
+    workspace.contains_param_item_vars = False
+    workspace.publish_item_name_exclude_regex = None
+    workspace.publish_folder_path_exclude_regex = None
+    workspace.publish_folder_path_to_include = None
+    item = _make_item()
+    workspace.repository_items = {ItemType.EVENTSTREAM.value: {item.name: item}}
+    publisher.fabric_workspace_obj = workspace
+    return publisher, workspace
+
+
 def test_flag_off_is_noop():
     """Without the flag, the context makes no API calls (publish behavior unchanged)."""
     publisher, workspace = _make_publisher(
@@ -445,23 +467,16 @@ def test_flag_on_new_eventstream_without_guid_skips_pause():
     workspace.endpoint.invoke.assert_not_called()
 
 
-@pytest.mark.parametrize("filter_type", ["name", "folder_exclude", "folder_include"])
+@pytest.mark.parametrize("filter_type", ["name", "folder_exclude", "folder_include", "items_to_include"])
 @pytest.mark.parametrize("include_publishable_item", [False, True])
-@pytest.mark.parametrize("publish_mode", ["parallel", "sequential", "ordered"])
-def test_standard_publish_filters_eventstreams_before_setup(
-    filter_type, include_publishable_item, publish_mode, mocker
+@pytest.mark.parametrize("publish_mode", ["parallel", "sequential", "ordered", "bulk"])
+def test_publish_filters_eventstreams_before_setup(
+    filter_type, include_publishable_item, publish_mode, orchestration_publisher, mocker
 ):
     """Excluded Eventstreams never enter setup or publishing, even alongside included items."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
-    publisher, mock_workspace = _make_publisher(
-        topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
-    )
-    workspace = FabricWorkspace.__new__(FabricWorkspace)
-    workspace._api_root_url = "https://api.example.com"
-    workspace.workspace_id = EVENTSTREAM_GUID
-    workspace.endpoint = mock_workspace.endpoint
-    workspace.items_to_include = None
-    workspace.bulk_publish_enabled = False
+    publisher, workspace = orchestration_publisher
+    workspace.bulk_publish_enabled = publish_mode == "bulk"
     workspace.publish_item_name_exclude_regex = "^MyEventstream$" if filter_type == "name" else None
     workspace.publish_folder_path_exclude_regex = "^Excluded$" if filter_type == "folder_exclude" else None
     workspace.publish_folder_path_to_include = ["Included"] if filter_type == "folder_include" else None
@@ -475,6 +490,8 @@ def test_standard_publish_filters_eventstreams_before_setup(
         guid="966a66bd-74b3-4bc5-a34d-6878ca1a40d1",
         folder_path="Included",
     )
+    if filter_type == "items_to_include":
+        workspace.items_to_include = [f"{included_item.name}.{ItemType.EVENTSTREAM.value}"]
     items = {excluded_item.name: excluded_item}
     if include_publishable_item:
         items[included_item.name] = included_item
@@ -491,17 +508,33 @@ def test_standard_publish_filters_eventstreams_before_setup(
     mocker.patch.object(publisher, "pre_publish_all")
     post_publish = mocker.patch.object(publisher, "post_publish_all")
     publish_one = mocker.patch.object(publisher, "publish_one")
+    publish_bulk = mocker.patch.object(workspace, "_publish_items")
     context = mocker.spy(publisher, "publish_items_context")
 
-    publisher.publish_all()
+    if publish_mode == "bulk":
+        mocker.patch.object(ItemPublisher, "create", return_value=publisher)
+        assert ItemPublisher.publish_all_bulk(workspace) == []
+    else:
+        publisher.publish_all()
 
     assert excluded_item.skip_publish is True
     assert workspace.repository_items[ItemType.EVENTSTREAM.value] == items
-    post_publish.assert_called_once_with()
+    if publish_mode != "bulk" or include_publishable_item:
+        post_publish.assert_called_once_with()
+    else:
+        post_publish.assert_not_called()
     if include_publishable_item:
         assert included_item.skip_publish is False
         context.assert_called_once_with([included_item])
-        publish_one.assert_called_once_with(included_item.name, included_item)
+        if publish_mode == "bulk":
+            publish_one.assert_not_called()
+            publish_bulk.assert_called_once_with(
+                [(included_item.name, included_item, publisher)],
+                skipped_items=[f"{ItemType.EVENTSTREAM.value}: {excluded_item.name}"],
+            )
+        else:
+            publish_one.assert_called_once_with(included_item.name, included_item)
+            publish_bulk.assert_not_called()
         urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
         assert urls
         assert all(f"/eventstreams/{included_item.guid}/" in url for url in urls)
@@ -510,7 +543,155 @@ def test_standard_publish_filters_eventstreams_before_setup(
     else:
         context.assert_not_called()
         publish_one.assert_not_called()
+        publish_bulk.assert_not_called()
         workspace.endpoint.invoke.assert_not_called()
+
+
+@pytest.mark.parametrize("publish_mode", ["parallel", "sequential", "ordered", "bulk"])
+@pytest.mark.parametrize("outcome", ["success", "publish_failure", "resume_failure", "publish_and_resume_failure"])
+def test_publish_orchestration_orders_pause_publish_and_resume(
+    publish_mode, outcome, orchestration_publisher, mocker, caplog
+):
+    """Both orchestrators wait for pause, publish, then clean up without masking failures."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = orchestration_publisher
+    workspace.bulk_publish_enabled = publish_mode == "bulk"
+    item = workspace.repository_items[ItemType.EVENTSTREAM.value]["MyEventstream"]
+    mocker.patch.object(ItemPublisher, "create", return_value=publisher)
+    mocker.patch.object(
+        EventstreamPublisher,
+        "parallel_config",
+        ParallelConfig(
+            enabled=publish_mode == "parallel",
+            ordered_items_func=(lambda _publisher: [item.name]) if publish_mode == "ordered" else None,
+        ),
+    )
+    events = []
+    invoke = workspace.endpoint.invoke.side_effect
+    publish_error = RuntimeError("Original publish failure")
+    resume_error = InvokeError("Resume failed", logging.getLogger(__name__))
+    publish_fails = outcome in {"publish_failure", "publish_and_resume_failure"}
+    resume_fails = outcome in {"resume_failure", "publish_and_resume_failure"}
+
+    def record_invoke(method, url, **kwargs):
+        if url.endswith("/resume"):
+            events.append("resume")
+            if resume_fails:
+                raise resume_error
+        result = invoke(method, url, **kwargs)
+        if url.endswith("/topology"):
+            events.append(f"topology:{result['body']['sources'][0]['status']}")
+        elif url.endswith("/pause"):
+            events.append("pause")
+        return result
+
+    def publish(*_args, **_kwargs):
+        events.append("publish")
+        if publish_fails:
+            raise publish_error
+
+    workspace.endpoint.invoke.side_effect = record_invoke
+    mocker.patch.object(publisher, "pre_publish_all", side_effect=lambda: events.append("pre"))
+    mocker.patch.object(publisher, "post_publish_all", side_effect=lambda: events.append("post"))
+    mocker.patch.object(workspace, "_publish_item", side_effect=publish)
+    mocker.patch.object(workspace, "_publish_items", side_effect=publish)
+
+    def run_publish():
+        if publish_mode == "bulk":
+            ItemPublisher.publish_all_bulk(workspace)
+        else:
+            publisher.publish_all()
+
+    if outcome == "success":
+        run_publish()
+    else:
+        expected_error = (
+            PublishError
+            if publish_fails and publish_mode != "bulk"
+            else type(publish_error if publish_fails else resume_error)
+        )
+        with pytest.raises(expected_error) as raised:
+            run_publish()
+        if publish_fails and publish_mode != "bulk":
+            assert raised.value.errors == [(item.name, publish_error)]
+        else:
+            assert raised.value is (publish_error if publish_fails else resume_error)
+
+    expected_events = ["pre", "topology:Running", "pause", "topology:Paused", "publish", "resume"]
+    if outcome == "success" or (publish_fails and publish_mode != "bulk"):
+        expected_events.append("post")
+    assert events == expected_events
+    if resume_fails:
+        assert "Resume failed" in caplog.text
+
+
+@pytest.mark.parametrize("first_batch_fails", [False, True])
+def test_bulk_orchestration_cleans_up_each_batch_before_refresh(first_batch_fails, orchestration_publisher, mocker):
+    """Real batch planning and publisher contexts resume sources before the next stage."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    publisher, workspace = orchestration_publisher
+    workspace.bulk_publish_enabled = True
+    workspace.contains_param_item_vars = True
+    workspace._dynamic_var_cache = {"$workspace.$id": EVENTSTREAM_GUID, "$items.Eventstream.stale.$id": "stale"}
+    first = workspace.repository_items[ItemType.EVENTSTREAM.value]["MyEventstream"]
+    second = Item(
+        type=ItemType.EVENTSTREAM.value,
+        name="SecondEventstream",
+        description="",
+        guid="966a66bd-74b3-4bc5-a34d-6878ca1a40d1",
+    )
+    workspace.repository_items[ItemType.EVENTSTREAM.value][second.name] = second
+    mocker.patch.object(ItemPublisher, "create", return_value=publisher)
+    mocker.patch(
+        "fabric_cicd._items._bulk_publish_dependencies.build_dynamic_variable_dependency_graph",
+        return_value=[(f"{second.type}.{second.name}", f"{first.type}.{first.name}")],
+    )
+    mocker.patch(
+        "fabric_cicd._items._bulk_publish_dependencies.get_async_attributes_to_wait_for",
+        return_value={},
+    )
+    events = []
+    invoke = workspace.endpoint.invoke.side_effect
+    publish_error = RuntimeError("First batch publish failed")
+
+    def record_invoke(method, url, **kwargs):
+        if url.endswith("/pause") or url.endswith("/resume"):
+            guid = url.split("/eventstreams/")[1].split("/")[0]
+            events.append((url.rsplit("/", 1)[1], guid))
+        return invoke(method, url, **kwargs)
+
+    def publish(batch_items, **_kwargs):
+        assert len(batch_items) == 1
+        item_name, item, batch_publisher = batch_items[0]
+        assert item_name == item.name
+        assert batch_publisher is publisher
+        events.append(("publish", item.guid))
+        if first_batch_fails:
+            raise publish_error
+
+    workspace.endpoint.invoke.side_effect = record_invoke
+    publish_bulk = mocker.patch.object(workspace, "_publish_items", side_effect=publish)
+    refresh = mocker.patch.object(workspace, "_refresh_deployed_items", side_effect=lambda: events.append("refresh"))
+    post_publish = mocker.patch.object(publisher, "post_publish_all")
+
+    if first_batch_fails:
+        with pytest.raises(RuntimeError) as raised:
+            ItemPublisher.publish_all_bulk(workspace)
+        assert raised.value is publish_error
+        refresh.assert_not_called()
+        post_publish.assert_not_called()
+        assert publish_bulk.call_count == 1
+    else:
+        assert ItemPublisher.publish_all_bulk(workspace) == []
+        refresh.assert_called_once_with()
+        post_publish.assert_called_once_with()
+        assert publish_bulk.call_count == 2
+        assert workspace._dynamic_var_cache == {"$workspace.$id": EVENTSTREAM_GUID}
+
+    expected_events = [("pause", first.guid), ("publish", first.guid), ("resume", first.guid)]
+    if not first_batch_fails:
+        expected_events.extend(["refresh", ("pause", second.guid), ("publish", second.guid), ("resume", second.guid)])
+    assert events == expected_events
 
 
 def test_base_publish_items_context_is_noop():
