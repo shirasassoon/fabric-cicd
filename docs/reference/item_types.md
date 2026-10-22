@@ -94,12 +94,7 @@
 - **Note** when deploying Eventstream items with private endpoint sources, enable the
   [`enable_eventstream_source_pause`](../how_to/optional_feature.md#feature-flags) feature flag.
   It pauses running sources before updating the definition and resumes them afterward, preventing
-  Fabric from rejecting the update. Eventstreams excluded by item selection, name, or folder filters
-  are not queried, paused, or resumed.
-- Resume retries transitional-state conflicts within a separate bounded cleanup retry period.
-  Cleanup failures are logged without replacing a publish or pause error already in progress.
-  If publishing otherwise succeeds, a resume failure fails the deployment. Check failed-resume logs
-  for sources that may need manual recovery.
+  Fabric from rejecting the update. Excluded Eventstreams are not queried, paused, or resumed.
 
 ## Graph Model
 
