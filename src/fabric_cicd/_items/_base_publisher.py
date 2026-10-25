@@ -583,8 +583,8 @@ class ItemPublisher(Publisher):
         """
         Wrap standard publishing or a bulk batch in item-specific setup and cleanup.
 
-        The default is a no-op. Subclasses can use _publishing_lifecycle() with their
-        setup and cleanup functions to preserve active errors when cleanup fails.
+        The default is a no-op. Subclasses should attempt cleanup even if setup
+        fails and preserve active setup or publish errors when cleanup fails.
 
         Args:
             items: The Item objects of this type being published.
@@ -605,25 +605,6 @@ class ItemPublisher(Publisher):
             for publisher, items in items_by_publisher.items():
                 batch_stack.enter_context(publisher.publish_context(items))
             yield
-
-    @staticmethod
-    @contextmanager
-    def _publishing_lifecycle(setup: Callable[[], None], cleanup: Callable[[], None]) -> Generator[None, None, None]:
-        """Run setup and always attempt cleanup without masking setup or publish errors."""
-        operation_failed = False
-        try:
-            setup()
-            yield
-        except BaseException:
-            operation_failed = True
-            raise
-        finally:
-            try:
-                cleanup()
-            except Exception:
-                logger.exception("Failed to clean up after item publishing")
-                if not operation_failed:
-                    raise
 
     def post_publish_all_check(self) -> None:
         """

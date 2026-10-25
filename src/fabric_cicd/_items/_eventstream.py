@@ -110,8 +110,8 @@ class EventstreamPublisher(ItemPublisher):
             return
 
         paused_sources: list[tuple[str, dict]] = []
-
-        def setup() -> None:
+        operation_failed = False
+        try:
             # Skip items that do not exist yet
             for item in items:
                 if not item.guid:
@@ -126,8 +126,11 @@ class EventstreamPublisher(ItemPublisher):
                     _wait_for_sources_paused(
                         self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
                     )
-
-        def cleanup() -> None:
+            yield
+        except BaseException:
+            operation_failed = True
+            raise
+        finally:
             resume_error: Optional[Exception] = None
             # Resume all previously paused sources, capturing any errors
             for eventstream_guid, source in paused_sources:
@@ -141,8 +144,5 @@ class EventstreamPublisher(ItemPublisher):
                     )
                     if resume_error is None:
                         resume_error = error
-            if resume_error is not None:
+            if resume_error is not None and not operation_failed:
                 raise resume_error
-
-        with self._publishing_lifecycle(setup, cleanup):
-            yield

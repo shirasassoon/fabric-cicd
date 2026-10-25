@@ -711,24 +711,30 @@ def test_bulk_orchestration_cleans_up_each_batch_before_refresh(first_batch_fail
 
 @pytest.mark.parametrize("failure_stage", [None, "setup", "publish"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
-def test_generic_publishing_lifecycle_preserves_errors(failure_stage, cleanup_fails, caplog):
-    """The reusable lifecycle always cleans up and preserves the primary exception."""
+def test_publish_context_preserves_errors(failure_stage, cleanup_fails, caplog, mocker):
+    """The Eventstream context always cleans up and preserves the primary exception."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    source = {"id": SOURCE_ID, "name": "MySource", "status": "Running"}
+    publisher, _ = _make_publisher(topology_sources=[source])
     events = []
     operation_error = RuntimeError("Original operation failure")
     cleanup_error = RuntimeError("Cleanup failed")
 
-    def setup():
+    def setup(*_args):
         events.append("setup")
         if failure_stage == "setup":
             raise operation_error
 
-    def cleanup():
+    def cleanup(*_args):
         events.append("cleanup")
         if cleanup_fails:
             raise cleanup_error
 
+    mocker.patch("fabric_cicd._items._eventstream._wait_for_sources_paused", side_effect=setup)
+    mocker.patch("fabric_cicd._items._eventstream._resume_source", side_effect=cleanup)
+
     def run_publish():
-        with ItemPublisher._publishing_lifecycle(setup, cleanup):
+        with publisher.publish_context([_make_item()]):
             events.append("publish")
             if failure_stage == "publish":
                 raise operation_error
