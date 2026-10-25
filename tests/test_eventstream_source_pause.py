@@ -95,7 +95,7 @@ def test_flag_off_is_noop():
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
     )
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         pass
 
     workspace.endpoint.invoke.assert_not_called()
@@ -108,7 +108,7 @@ def test_flag_on_no_running_sources_updates_without_pause():
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Stopped"}],
     )
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         pass
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
@@ -124,7 +124,7 @@ def test_flag_on_pauses_running_sources_then_resumes():
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
     )
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         # Inside the context the source is paused but not yet resumed.
         urls_inside = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
         assert any(url.endswith(f"/sources/{SOURCE_ID}/pause") for url in urls_inside)
@@ -178,7 +178,7 @@ def test_flag_on_waits_for_async_pause_before_resuming(monkeypatch):
     publisher = EventstreamPublisher.__new__(EventstreamPublisher)
     publisher.fabric_workspace_obj = workspace
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         pass
 
     invoke_calls = workspace.endpoint.invoke.call_args_list
@@ -213,7 +213,7 @@ def test_flag_on_missing_source_remains_pending_until_it_reappears(monkeypatch):
     publisher = EventstreamPublisher.__new__(EventstreamPublisher)
     publisher.fabric_workspace_obj = workspace
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         pass
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
@@ -246,7 +246,7 @@ def test_flag_on_pause_failed_stops_publish_and_resumes_source():
 
     with (
         pytest.raises(Exception, match="Failed to pause Eventstream source"),
-        publisher.publish_context([_make_item()]),
+        publisher.publish_lifecycle([_make_item()]),
     ):
         entered_publish = True
 
@@ -283,7 +283,7 @@ def test_setup_failure_resumes_sources_already_paused(resume_fails, caplog):
     publisher = EventstreamPublisher.__new__(EventstreamPublisher)
     publisher.fabric_workspace_obj = workspace
 
-    with pytest.raises(Exception, match="Second pause failed"), publisher.publish_context([_make_item()]):
+    with pytest.raises(Exception, match="Second pause failed"), publisher.publish_lifecycle([_make_item()]):
         pass
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
@@ -303,7 +303,7 @@ def test_flag_on_only_running_sources_are_paused():
         ],
     )
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         pass
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
@@ -320,7 +320,7 @@ def test_flag_on_publish_fails_sources_are_still_resumed():
     )
 
     publish_error = Exception("Operation failed. Error Code: SomethingElse.")
-    with pytest.raises(Exception, match="SomethingElse"), publisher.publish_context([_make_item()]):
+    with pytest.raises(Exception, match="SomethingElse"), publisher.publish_lifecycle([_make_item()]):
         raise publish_error
 
     urls = [call.kwargs["url"] for call in workspace.endpoint.invoke.call_args_list]
@@ -355,7 +355,7 @@ def test_resume_failures_are_logged_without_masking_publish_error(publish_fails,
         if publish_fails:
             raise publish_error
 
-    with pytest.raises((RuntimeError, InvokeError)) as raised, publisher.publish_context([_make_item()]):
+    with pytest.raises((RuntimeError, InvokeError)) as raised, publisher.publish_lifecycle([_make_item()]):
         publish()
 
     assert len(resume_errors) == 2
@@ -434,7 +434,7 @@ def test_pause_timeout_survives_single_resume_conflict(mocker, caplog):
         return {"body": {}}
 
     workspace.endpoint.invoke.side_effect = invoke
-    with pytest.raises(TimeoutError) as raised, publisher.publish_context([_make_item()]):
+    with pytest.raises(TimeoutError) as raised, publisher.publish_lifecycle([_make_item()]):
         pytest.fail("Publishing must not start after pause timeout")
 
     assert raised.value is pause_timeout
@@ -460,7 +460,7 @@ def test_resume_does_not_retry_api_failures(error_message, mocker):
         return invoke(method, url, **kwargs)
 
     workspace.endpoint.invoke.side_effect = fail_resume
-    with pytest.raises(InvokeError) as raised, publisher.publish_context([_make_item()]):
+    with pytest.raises(InvokeError) as raised, publisher.publish_lifecycle([_make_item()]):
         pass
 
     assert raised.value is error
@@ -476,7 +476,7 @@ def test_flag_on_new_eventstream_without_guid_skips_pause():
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
     )
 
-    with publisher.publish_context([_make_item(guid="")]):
+    with publisher.publish_lifecycle([_make_item(guid="")]):
         pass
 
     workspace.endpoint.invoke.assert_not_called()
@@ -524,7 +524,7 @@ def test_publish_filters_eventstreams_before_setup(
     post_publish = mocker.patch.object(publisher, "post_publish_all")
     publish_one = mocker.patch.object(publisher, "publish_one")
     publish_bulk = mocker.patch.object(workspace, "_publish_items")
-    context = mocker.spy(publisher, "publish_context")
+    context = mocker.spy(publisher, "publish_lifecycle")
 
     if publish_mode == "bulk":
         mocker.patch.object(ItemPublisher, "create", return_value=publisher)
@@ -711,7 +711,7 @@ def test_bulk_orchestration_cleans_up_each_batch_before_refresh(first_batch_fail
 
 @pytest.mark.parametrize("failure_stage", [None, "setup", "publish"])
 @pytest.mark.parametrize("cleanup_fails", [False, True])
-def test_publish_context_preserves_errors(failure_stage, cleanup_fails, caplog, mocker):
+def test_publish_lifecycle_preserves_errors(failure_stage, cleanup_fails, caplog, mocker):
     """The Eventstream context always cleans up and preserves the primary exception."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     source = {"id": SOURCE_ID, "name": "MySource", "status": "Running"}
@@ -734,7 +734,7 @@ def test_publish_context_preserves_errors(failure_stage, cleanup_fails, caplog, 
     mocker.patch("fabric_cicd._items._eventstream._resume_source", side_effect=cleanup)
 
     def run_publish():
-        with publisher.publish_context([_make_item()]):
+        with publisher.publish_lifecycle([_make_item()]):
             events.append("publish")
             if failure_stage == "publish":
                 raise operation_error
@@ -751,12 +751,89 @@ def test_publish_context_preserves_errors(failure_stage, cleanup_fails, caplog, 
         assert "Cleanup failed" in caplog.text
 
 
-def test_base_publish_context_is_noop():
+def test_base_publish_lifecycle_is_noop():
     """The base hook is a no-op context manager so other item types are unaffected."""
     publisher = ItemPublisher.__new__(ItemPublisher)
 
-    with publisher.publish_context([_make_item()]):
+    with publisher.publish_lifecycle([_make_item()]):
         pass
+
+
+@pytest.mark.parametrize("failure_stage", [None, "setup", "publish"])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_base_publish_lifecycle_runs_hooks(failure_stage, cleanup_fails, error_type, caplog, mocker):
+    """The base lifecycle calls item-specific hooks and preserves active errors."""
+    publisher = ItemPublisher.__new__(ItemPublisher)
+    items = [_make_item()]
+    events = []
+    operation_error = error_type("Original operation failure")
+    cleanup_error = RuntimeError("Cleanup failed")
+
+    def setup(received_items):
+        assert received_items is items
+        events.append("setup")
+        if failure_stage == "setup":
+            raise operation_error
+
+    def cleanup(received_items):
+        assert received_items is items
+        events.append("cleanup")
+        if cleanup_fails:
+            raise cleanup_error
+
+    setup_hook = mocker.patch.object(publisher, "setup", side_effect=setup)
+    cleanup_hook = mocker.patch.object(publisher, "cleanup", side_effect=cleanup)
+
+    def run_publish():
+        with publisher.publish_lifecycle(items):
+            events.append("publish")
+            if failure_stage == "publish":
+                raise operation_error
+
+    if failure_stage is not None or cleanup_fails:
+        expected_error = operation_error if failure_stage is not None else cleanup_error
+        with pytest.raises(type(expected_error)) as raised:
+            run_publish()
+        assert raised.value is expected_error
+    else:
+        run_publish()
+
+    setup_hook.assert_called_once_with(items)
+    cleanup_hook.assert_called_once_with(items)
+    assert events == (["setup", "cleanup"] if failure_stage == "setup" else ["setup", "publish", "cleanup"])
+    if cleanup_fails:
+        assert "Failed to clean up after item publishing" in caplog.text
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_eventstream_lifecycle_clears_state_between_operations(cleanup_fails, mocker):
+    """Reusing a publisher does not resume sources tracked by a previous operation."""
+    constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    source = {"id": SOURCE_ID, "name": "MySource", "status": "Running"}
+    publisher, workspace = _make_publisher(topology_sources=[source])
+    resume = mocker.patch(
+        "fabric_cicd._items._eventstream._resume_source",
+        side_effect=RuntimeError("Resume failed") if cleanup_fails else None,
+    )
+
+    if cleanup_fails:
+        with pytest.raises(RuntimeError, match="Resume failed"), publisher.publish_lifecycle([_make_item()]):
+            pass
+    else:
+        with publisher.publish_lifecycle([_make_item()]):
+            pass
+
+    assert publisher._paused_sources == []
+    resume.assert_called_once_with(workspace, EVENTSTREAM_GUID, source)
+    constants.FEATURE_FLAG.discard(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
+    workspace.endpoint.invoke.reset_mock()
+
+    with publisher.publish_lifecycle([_make_item()]):
+        pass
+
+    resume.assert_called_once_with(workspace, EVENTSTREAM_GUID, source)
+    workspace.endpoint.invoke.assert_not_called()
 
 
 def test_flag_in_supported_feature_flags():

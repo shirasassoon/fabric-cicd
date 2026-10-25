@@ -5,8 +5,6 @@
 
 import logging
 import time
-from collections.abc import Generator
-from contextlib import contextmanager
 from typing import Optional
 
 from fabric_cicd import FabricWorkspace, constants
@@ -101,48 +99,44 @@ class EventstreamPublisher(ItemPublisher):
     """Publisher for Eventstream items."""
 
     item_type = ItemType.EVENTSTREAM.value
+    _paused_sources: list[tuple[str, dict]]
 
-    @contextmanager
-    def publish_context(self, items: list[Item]) -> Generator[None, None, None]:
-        """Pause deployed sources before either publish path and attempt all resumes on exit."""
+    def setup(self, items: list[Item]) -> None:
+        """Pause deployed sources and track successful pauses for this operation."""
+        self._paused_sources = []
         if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG:
-            yield
             return
 
-        paused_sources: list[tuple[str, dict]] = []
-        operation_failed = False
-        try:
-            # Skip items that do not exist yet
-            for item in items:
-                if not item.guid:
-                    continue
-                running_sources = _get_running_sources(self.fabric_workspace_obj, item.guid)
-                for source in running_sources:
-                    # Pause each running source and track it for later resumption
-                    _pause_source(self.fabric_workspace_obj, item.guid, source)
-                    paused_sources.append((item.guid, source))
-                # Wait for all running sources to be paused before continuing
-                if running_sources:
-                    _wait_for_sources_paused(
-                        self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
-                    )
-            yield
-        except BaseException:
-            operation_failed = True
-            raise
-        finally:
-            resume_error: Optional[Exception] = None
-            # Resume all previously paused sources, capturing any errors
-            for eventstream_guid, source in paused_sources:
-                try:
-                    _resume_source(self.fabric_workspace_obj, eventstream_guid, source)
-                except Exception as error:
-                    logger.exception(
-                        "Failed to resume Eventstream source '%s' in Eventstream '%s'",
-                        source["id"],
-                        eventstream_guid,
-                    )
-                    if resume_error is None:
-                        resume_error = error
-            if resume_error is not None and not operation_failed:
-                raise resume_error
+        # Skip items that do not exist yet
+        for item in items:
+            if not item.guid:
+                continue
+            running_sources = _get_running_sources(self.fabric_workspace_obj, item.guid)
+            for source in running_sources:
+                # Pause each running source and track it for later resumption
+                _pause_source(self.fabric_workspace_obj, item.guid, source)
+                self._paused_sources.append((item.guid, source))
+            # Wait for all running sources to be paused before continuing
+            if running_sources:
+                _wait_for_sources_paused(
+                    self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
+                )
+
+    def cleanup(self, items: list[Item]) -> None:  # noqa: ARG002
+        """Attempt every source resume and clear tracking before the next operation."""
+        paused_sources = self._paused_sources
+        self._paused_sources = []
+        resume_error: Optional[Exception] = None
+        for eventstream_guid, source in paused_sources:
+            try:
+                _resume_source(self.fabric_workspace_obj, eventstream_guid, source)
+            except Exception as error:
+                logger.exception(
+                    "Failed to resume Eventstream source '%s' in Eventstream '%s'",
+                    source["id"],
+                    eventstream_guid,
+                )
+                if resume_error is None:
+                    resume_error = error
+        if resume_error is not None:
+            raise resume_error

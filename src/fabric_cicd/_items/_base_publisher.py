@@ -396,7 +396,7 @@ class ItemPublisher(Publisher):
                     )
 
                 # Publish the current batch within the batch publish context
-                with ItemPublisher._batch_publish_context(batch_items):
+                with ItemPublisher._batch_publish_lifecycle(batch_items):
                     fabric_workspace_obj._publish_items(
                         batch_items, skipped_items=skipped_items if batch_index == 0 else None
                     )
@@ -470,7 +470,7 @@ class ItemPublisher(Publisher):
 
         # Run the publisher's setup before standard publishing and cleanup afterward
         try:
-            with self.publish_context(list(items.values())):
+            with self.publish_lifecycle(list(items.values())):
                 if config.ordered_items_func is not None:
                     order = config.ordered_items_func(self)
                     errors = self._publish_items_ordered(items, order)
@@ -578,32 +578,67 @@ class ItemPublisher(Publisher):
         """
         pass
 
-    @contextmanager
-    def publish_context(self, items: list["Item"]) -> Generator[None, None, None]:  # noqa: ARG002
-        """
-        Wrap standard publishing or a bulk batch in item-specific setup and cleanup.
+    def setup(self, items: list["Item"]) -> None:  # noqa: ARG002
+        """Prepare one publish operation or bulk batch. The default is a no-op."""
+        pass
 
-        The default is a no-op. Subclasses should attempt cleanup even if setup
-        fails and preserve active setup or publish errors when cleanup fails.
+    def cleanup(self, items: list["Item"]) -> None:  # noqa: ARG002
+        """
+        Clean up one publish operation or bulk batch, even after partial setup failure.
+
+        Subclasses should attempt all cleanup actions before raising an error.
+        The default is a no-op.
+        """
+        pass
+
+    @contextmanager
+    def publish_lifecycle(self, items: list["Item"]) -> Generator[None, None, None]:
+        """
+        Run item-type setup and cleanup around publishing (pre/post-publish hooks are separate).
+
+        Standard publishing: call setup() once before publishing all selected items of
+        this type, then cleanup() once afterward, even when items publish in parallel.
+        Bulk publishing: for each batch, call setup() on each publisher whose type is in
+        the batch, passing only its items. Publish the batch, then call cleanup() in
+        reverse setup order. Repeat for each batch; types absent from a batch are skipped.
+
+        Subclasses override the no-op setup() and/or cleanup() hooks, not this method.
+        Cleanup runs even after partial setup failure; its errors propagate only if setup
+        and publishing succeeded, otherwise they are logged without masking the original.
+        Calls on the same publisher must not overlap. Hooks sharing instance state must
+        reset it per operation, since a publisher may be reused across bulk batches.
 
         Args:
             items: The Item objects of this type being published.
         """
-        yield
+        setup_or_publish_failed = False
+        try:
+            self.setup(items)
+            yield
+        except BaseException:
+            setup_or_publish_failed = True
+            raise
+        finally:
+            try:
+                self.cleanup(items)
+            except Exception:
+                logger.exception("Failed to clean up after item publishing")
+                if not setup_or_publish_failed:
+                    raise
 
     @staticmethod
     @contextmanager
-    def _batch_publish_context(
+    def _batch_publish_lifecycle(
         batch_items: list[tuple[str, Item, "ItemPublisher"]],
     ) -> Generator[None, None, None]:
-        """Enter each publisher's context once per batch and exit them in reverse order."""
+        """Enter each publisher's lifecycle once per batch and exit them in reverse order."""
         items_by_publisher: dict[ItemPublisher, list[Item]] = defaultdict(list)
         for _, item, publisher in batch_items:
             items_by_publisher[publisher].append(item)
 
         with ExitStack() as batch_stack:
             for publisher, items in items_by_publisher.items():
-                batch_stack.enter_context(publisher.publish_context(items))
+                batch_stack.enter_context(publisher.publish_lifecycle(items))
             yield
 
     def post_publish_all_check(self) -> None:
