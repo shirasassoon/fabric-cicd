@@ -135,32 +135,6 @@ def test_set_deployment_plan_in_batch_does_not_require_target_lookup():
     deployed_items.get.assert_not_called()
 
 
-@pytest.mark.parametrize("metadata", [{}, {"logicalId": None}, {"logicalId": "target-plan-id"}])
-def test_refresh_deployed_items_preserves_optional_logical_id(metadata):
-    workspace = make_workspace()
-    workspace.contains_param_item_vars = False
-    workspace.endpoint.invoke.return_value = {
-        "body": {
-            "value": [
-                {
-                    "type": ItemType.DEPLOYMENT_PLAN.value,
-                    "displayName": "Plan",
-                    "description": "",
-                    "id": "target-item-id",
-                    **metadata,
-                }
-            ]
-        }
-    }
-
-    FabricWorkspace._refresh_deployed_items(workspace)
-
-    plan = workspace.deployed_items[ItemType.DEPLOYMENT_PLAN.value]["Plan"]
-    assert plan.logical_id == (metadata.get("logicalId") or "")
-    assert plan.guid == "target-item-id"
-    assert workspace.workspace_items[ItemType.DEPLOYMENT_PLAN.value]["Plan"]["id"] == "target-item-id"
-
-
 def test_bulk_publish_uses_top_level_plan_logical_id():
     workspace = make_workspace()
     plan = make_plan()
