@@ -203,7 +203,7 @@ def publish_all_items(
         >>> workspace = FabricWorkspace(
         ...     workspace_id="your-workspace-id",
         ...     repository_directory="/path/to/repo",
-        ...     item_type_in_scope=["Notebook", "DataPipeline", "Lakehouse", "Environment"],
+        ...     item_type_in_scope=["DeploymentPlan","Notebook", "DataPipeline", "Lakehouse", "Environment"],
         ...     token_credential=AzureCliCredential()  # or any other TokenCredential
         ... )
         >>> publish_all_items(workspace, deployment_plan="deployment_plan_ppe")
@@ -248,12 +248,12 @@ def publish_all_items(
         ):
             reasons.append(
                 "parameter file contains $items.* replace_value entries without an item_type, "
-                "item_name, or file_path filter; add at least one filter to each to enable bulk publish"
+                "item_name, or file_path filter; add at least one filter to each to enable bulk publish."
             )
 
         # Fall back to standard deployment if any blocking reason was found, otherwise enable bulk publish
         if reasons:
-            logger.warning(f"Falling back to standard deployment. Reason: {'; '.join(reasons)}.")
+            logger.warning(f"Falling back to standard deployment. Reason: {'; '.join(reasons)}")
 
         else:
             fabric_workspace_obj.bulk_publish_enabled = True
@@ -261,7 +261,7 @@ def publish_all_items(
     # If deployment_plan is specified, ensure bulk publishing is enabled and validate the plan value
     if deployment_plan is not None:
         if not fabric_workspace_obj.bulk_publish_enabled:
-            msg = "Applying a deployment plan requires bulk publishing."
+            msg = "Executing a deployment plan requires bulk publishing. Use bulk publishing or omit the 'deployment_plan' parameter."
             raise InputError(msg, logger)
         fabric_workspace_obj.deployment_plan = validate_deployment_plan(deployment_plan)
 
