@@ -4,13 +4,13 @@
 """Functions to process and deploy Deployment Plan item."""
 
 import logging
-from collections.abc import Mapping, Sequence
-from typing import Optional
+from collections.abc import Sequence
 
 from fabric_cicd._common._exceptions import InputError
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher
 from fabric_cicd.constants import ItemType
+from fabric_cicd.fabric_workspace import FabricWorkspace
 
 logger = logging.getLogger(__name__)
 
@@ -22,27 +22,25 @@ class DeploymentPlanPublisher(ItemPublisher):
 
 
 def set_deployment_plan(
-    deployment_plan: Optional[str],
+    fabric_workspace_obj: FabricWorkspace,
     items_with_context: Sequence[tuple[str, Item, object]],
-    repository_items: Mapping[str, Mapping[str, Item]],
-    deployed_items: Mapping[str, Mapping[str, Item]],
 ) -> dict[str, object]:
     """
     Sets the deployment plan to be used by the bulk publish operation.
 
     Args:
-        deployment_plan: The name of the repository deployment plan to use, if provided.
+        fabric_workspace_obj: The workspace containing the selected plan, repository items, and deployed items.
         items_with_context: A sequence of tuples containing item names, Item objects, and additional context.
-        repository_items: Repository items by type and name, including items outside the publish batch.
-        deployed_items: Target workspace items by type and name.
 
     Returns:
         A dictionary containing the repository plan's logical ID, or an empty dictionary if no plan is selected.
 
     """
+    deployment_plan = fabric_workspace_obj.deployment_plan
     if deployment_plan is None:
         return {}
 
+    repository_items = fabric_workspace_obj.repository_items
     repository_plan = repository_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
     if repository_plan is None:
         msg = f"Deployment Plan '{deployment_plan}' must exist in the repository to be executed in the deployment"
@@ -55,7 +53,7 @@ def set_deployment_plan(
         item.type == ItemType.DEPLOYMENT_PLAN.value and name == deployment_plan for name, item, _ in items_with_context
     )
     if not in_publish_batch:
-        deployed_plan = deployed_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
+        deployed_plan = fabric_workspace_obj.deployed_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
         if deployed_plan is None:
             msg = (
                 f"Deployment Plan '{deployment_plan}' must be included in the bulk publish batch "
