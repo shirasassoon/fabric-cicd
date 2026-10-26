@@ -81,7 +81,7 @@ target_workspace = FabricWorkspace(
 
 # Uncomment to publish
 # Publish all items defined in item_type_in_scope
-# publish_all_items(target_workspace, deployment_plan="DeploymentPlan_2")
+# publish_all_items(target_workspace)
 
 # Uncomment to unpublish
 # Unpublish all items defined in scope not found in repository
