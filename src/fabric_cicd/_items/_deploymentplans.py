@@ -45,10 +45,10 @@ def set_deployment_plan(
 
     repository_plan = repository_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
     if repository_plan is None:
-        msg = f"Deployment Plan '{deployment_plan}' must exist in the repository."
+        msg = f"Deployment Plan '{deployment_plan}' must exist in the repository to be executed in the deployment"
         raise InputError(msg, logger)
     if not repository_plan.logical_id.strip():
-        msg = f"Cannot retrieve a logical ID for Deployment Plan '{deployment_plan}' from the repository."
+        msg = f"Cannot retrieve a logical ID for Deployment Plan '{deployment_plan}' from the repository"
         raise InputError(msg, logger)
 
     in_publish_batch = any(
@@ -59,7 +59,7 @@ def set_deployment_plan(
         if deployed_plan is None:
             msg = (
                 f"Deployment Plan '{deployment_plan}' must be included in the bulk publish batch "
-                "or already exist in the target workspace."
+                "or already exist in the target workspace to be executed in the deployment"
             )
             raise InputError(msg, logger)
 

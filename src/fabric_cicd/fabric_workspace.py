@@ -952,6 +952,9 @@ class FabricWorkspace:
         url = f"{self.base_api_url}/items/bulkImportDefinitions"
         if "deploymentPlan" in options:
             url += "?beta=true"
+            logger.info(
+                f"Deployment Plan '{self.deployment_plan}' will be executed as part of the bulk publish operation"
+            )
 
         # https://learn.microsoft.com/en-us/rest/api/fabric/core/items/bulk-import-item-definitions
         response = self.endpoint.invoke(
