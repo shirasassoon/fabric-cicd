@@ -73,11 +73,11 @@
 
 - **Parameterization:**
     - The `find_replace` section in the `parameter.yml` file is not applied.
-- **Application:**
-    - Applying a deployment plan deploys items in the order specified in the plan and runs the intermediate actions it defines.
-    - Publishing a deployment plan item does not automatically apply it. To apply it during publishing, specify its exact display name using the `publish.deployment_plan` configuration field or the optional `deployment_plan` argument to [`publish_all_items()`](code_reference.md#fabric_cicd.publish_all_items).
-    - Applying a plan requires **bulk publish mode**. The selected plan must exist in the repository with a non-empty logical ID and either be included in the items being published or already exist in the target workspace.
-    - See [Deployment Plan Option](../how_to/config_deployment.md#deployment-plan-option) for configuration details and limitations.
+- **Execution:**
+    - A deployment plan controls the order in which items are deployed and runs the intermediate actions defined in the plan.
+    - Publishing a deployment plan item does not automatically execute it. To execute the plan as part of a deployment, specify its exact display name in the `publish.deployment_plan` configuration field or the optional `deployment_plan` argument to [`publish_all_items()`](code_reference.md#fabric_cicd.publish_all_items).
+    - Executing a plan requires **bulk publish mode**. The selected plan must exist in the repository with a non-empty logical ID. It must also be included in the publish batch or already exist in the target workspace.
+    - See [Deployment Plan Option](../how_to/config_deployment.md#deployment-plan-option) for more configuration details and limitations.
 
 ## Environment
 

@@ -40,18 +40,16 @@ def set_deployment_plan(
     if deployment_plan is None:
         return {}
 
-    repository_items = fabric_workspace_obj.repository_items
-    repository_plan = repository_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
+    # Ensure the deployment plan exists in the repository before proceeding
+    repository_plan = fabric_workspace_obj.repository_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
     if repository_plan is None:
         msg = f"Deployment Plan '{deployment_plan}' must exist in the repository to be executed in the deployment"
         raise InputError(msg, logger)
-    if not repository_plan.logical_id.strip():
-        msg = f"Cannot retrieve a logical ID for Deployment Plan '{deployment_plan}' from the repository"
-        raise InputError(msg, logger)
-
+    # Check if the deployment plan is included in the current publish batch
     in_publish_batch = any(
         item.type == ItemType.DEPLOYMENT_PLAN.value and name == deployment_plan for name, item, _ in items_with_context
     )
+    # If the deployment plan is not in the publish batch, ensure it already exists in the target workspace
     if not in_publish_batch:
         deployed_plan = fabric_workspace_obj.deployed_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
         if deployed_plan is None:

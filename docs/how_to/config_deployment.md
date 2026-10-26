@@ -199,16 +199,13 @@ publish:
 
 #### Deployment Plan Option
 
-To apply a deployment plan during publishing, set `publish.deployment_plan` to the exact display name of a deployment plan item in the repository. The plan must either be included in the publish batch or already exist in the target workspace. Specify a non-empty string or an environment-specific mapping, as shown above.
+To apply a deployment plan during publishing, set `publish.deployment_plan` to the exact display name of a deployment plan item in the repository. Specify a non-empty string or an environment-specific mapping, as shown above.
 
 !!! note
 
-    - This option currently requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled.
-    - Selecting a deployment plan raises an error if bulk publishing is disabled or falls back to standard publishing; the plan is never silently ignored.
-    - To publish the selected plan as part of the deployment, include `DeploymentPlan` in `core.item_types_in_scope` and ensure the plan is not excluded by publish filters.
-    - The selected plan must exist in the repository with a non-empty logical ID, even when it is not being published. Target-only plans are not supported.
-    - To apply a plan without publishing it, a same-name Deployment Plan must already exist in the target workspace. The repository plan's logical ID is used and must identify that existing target plan.
-    - Deployment plans cannot be applied automatically in standard publish mode or in bulk publish mode when parameter dependencies require multiple batches.
+    - This option requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled. If `deployment_plan` is specified but bulk publishing is disabled or falls back to standard publishing, the deployment stops with an error before any items are published.
+    - The selected plan must exist in the repository directory, even if it already exists in the target workspace. Target-only plans are not supported.
+    - Executing a deployment plan requires a single bulk publish batch. Plans cannot be executed when parameter dependencies split the deployment into multiple batches.
 
 ### Unpublish Settings
 

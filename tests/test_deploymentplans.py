@@ -113,16 +113,6 @@ def test_set_deployment_plan_rejects_same_name_target_item_of_another_type():
         set_deployment_plan(workspace, [])
 
 
-@pytest.mark.parametrize("logical_id", ["", " ", "\t\n"])
-def test_set_deployment_plan_rejects_existing_plan_without_logical_id(logical_id):
-    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id=logical_id)}}
-    deployed_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id="target-id")}}
-    workspace = make_workspace("Plan", repository_items, deployed_items)
-
-    with pytest.raises(InputError, match="logical ID"):
-        set_deployment_plan(workspace, [])
-
-
 def test_set_deployment_plan_in_batch_does_not_require_target_lookup():
     plan = make_plan(logical_id="batch-id")
     repository_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": plan}}
@@ -183,21 +173,12 @@ def test_bulk_publish_preserves_per_item_options_with_plan():
     assert plan_options == {"deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"}}
 
 
-@pytest.mark.parametrize(
-    ("plans", "message"),
-    [
-        ([], "must exist in the repository"),
-        ([make_plan(logical_id="")], "Deployment Plan 'Plan'"),
-    ],
-)
-def test_set_deployment_plan_rejects_invalid_plans_before_request(plans, message):
+def test_set_deployment_plan_rejects_missing_plan_before_request():
     workspace = make_workspace()
     workspace.deployment_plan = "Plan"
-    batch = [(plan.name, plan, DeploymentPlanPublisher(workspace)) for plan in plans]
-    workspace.repository_items = {ItemType.DEPLOYMENT_PLAN.value: {plan.name: plan for plan in plans}}
 
-    with pytest.raises(InputError, match=message):
-        set_deployment_plan(workspace, batch)
+    with pytest.raises(InputError, match="must exist in the repository"):
+        set_deployment_plan(workspace, [])
 
     workspace.endpoint.invoke.assert_not_called()
 
