@@ -257,9 +257,12 @@ def publish_all_items(
 
         else:
             fabric_workspace_obj.bulk_publish_enabled = True
-            # Validate and assign it to the workspace object, if provided
-            if deployment_plan is not None:
-                fabric_workspace_obj.deployment_plan = validate_deployment_plan(deployment_plan)
+
+    if deployment_plan is not None:
+        if not fabric_workspace_obj.bulk_publish_enabled:
+            msg = "Applying a deployment plan requires bulk publishing."
+            raise InputError(msg, logger)
+        fabric_workspace_obj.deployment_plan = validate_deployment_plan(deployment_plan)
 
     # Apply selective deployment features
     if FeatureFlag.DISABLE_WORKSPACE_FOLDER_PUBLISH.value not in constants.FEATURE_FLAG:

@@ -204,6 +204,7 @@ To apply a deployment plan during publishing, set `publish.deployment_plan` to t
 !!! note
 
     - This option currently requires **bulk publish mode**, with both the `enable_bulk_publish` and `enable_experimental_features` flags enabled.
+    - Selecting a deployment plan raises an error if bulk publishing is disabled or falls back to standard publishing; the plan is never silently ignored.
     - To publish the selected plan as part of the deployment, include `DeploymentPlan` in `core.item_types_in_scope` and ensure the plan is not excluded by publish filters.
     - The selected plan must exist in the repository with a non-empty logical ID, even when it is not being published. Target-only plans are not supported.
     - To apply a plan without publishing it, a same-name Deployment Plan must already exist in the target workspace. The repository plan's logical ID is used and must identify that existing target plan.
