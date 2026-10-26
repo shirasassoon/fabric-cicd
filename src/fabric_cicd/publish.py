@@ -203,7 +203,7 @@ def publish_all_items(
         >>> workspace = FabricWorkspace(
         ...     workspace_id="your-workspace-id",
         ...     repository_directory="/path/to/repo",
-        ...     item_type_in_scope=["DeploymentPlan","Notebook", "DataPipeline", "Lakehouse", "Environment"],
+        ...     item_type_in_scope=["DeploymentPlan", "Notebook", "DataPipeline", "Lakehouse", "Environment"],
         ...     token_credential=AzureCliCredential()  # or any other TokenCredential
         ... )
         >>> publish_all_items(workspace, deployment_plan="deployment_plan_ppe")
