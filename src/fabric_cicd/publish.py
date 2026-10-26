@@ -253,7 +253,7 @@ def publish_all_items(
 
         # Fall back to standard deployment if any blocking reason was found, otherwise enable bulk publish
         if reasons:
-            logger.warning(f"Falling back to standard deployment. Reason: {'; '.join(reasons)}")
+            logger.warning(f"Falling back to standard deployment. Reason: {'; '.join(reasons)}.")
 
         else:
             fabric_workspace_obj.bulk_publish_enabled = True
