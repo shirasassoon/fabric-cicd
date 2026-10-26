@@ -48,7 +48,8 @@ def make_plan(name="Plan", logical_id="00000000-0000-0000-0000-000000000000"):
 def test_set_deployment_plan_returns_bulk_options_for_undeployed_plan():
     plan = make_plan()
 
-    assert set_deployment_plan("Plan", [(plan.name, plan, object())], {}, {}) == {
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {plan.name: plan}}
+    assert set_deployment_plan("Plan", [(plan.name, plan, object())], repository_items, {}) == {
         "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
     }
 
@@ -60,29 +61,35 @@ def test_set_deployment_plan_returns_no_options_without_selection():
 def test_set_deployment_plan_rejects_same_name_of_another_type():
     notebook = Item(ItemType.NOTEBOOK.value, "Plan", "", "", logical_id="notebook-id")
 
-    with pytest.raises(InputError, match="must be included"):
-        set_deployment_plan("Plan", [(notebook.name, notebook, object())], {}, {})
+    with pytest.raises(InputError, match="must exist in the repository"):
+        set_deployment_plan(
+            "Plan", [(notebook.name, notebook, object())], {ItemType.NOTEBOOK.value: {"Plan": notebook}}, {}
+        )
 
 
 @pytest.mark.parametrize(
-    ("repository_id", "deployed_id", "expected_id"),
-    [
-        ("repository-id", "", "repository-id"),
-        ("repository-id", "deployed-id", "repository-id"),
-        (None, "deployed-id", "deployed-id"),
-        ("", "deployed-id", "deployed-id"),
-        (" ", "deployed-id", "deployed-id"),
-    ],
+    "deployed_id",
+    ["", "deployed-id"],
 )
-def test_set_deployment_plan_resolves_existing_target_plan(repository_id, deployed_id, expected_id):
-    repository_items = {}
-    if repository_id is not None:
-        repository_items[ItemType.DEPLOYMENT_PLAN.value] = {"Plan": make_plan(logical_id=repository_id)}
+def test_set_deployment_plan_resolves_existing_target_plan(deployed_id):
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id="repository-id")}}
     deployed_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id=deployed_id)}}
 
     assert set_deployment_plan("Plan", [], repository_items, deployed_items) == {
-        "deploymentPlan": {"logicalId": expected_id, "referenceType": "ByLogicalId"},
+        "deploymentPlan": {"logicalId": "repository-id", "referenceType": "ByLogicalId"},
     }
+
+
+@pytest.mark.parametrize("in_batch", [False, True])
+def test_set_deployment_plan_requires_repository_plan_before_other_lookups(in_batch):
+    plan = make_plan(logical_id="target-id")
+    batch = [(plan.name, plan, object())] if in_batch else []
+    deployed_items = MagicMock()
+
+    with pytest.raises(InputError, match="must exist in the repository"):
+        set_deployment_plan("Plan", batch, {}, deployed_items)
+
+    deployed_items.get.assert_not_called()
 
 
 def test_set_deployment_plan_rejects_repository_only_plan_outside_batch():
@@ -102,19 +109,22 @@ def test_set_deployment_plan_rejects_same_name_target_item_of_another_type():
 
 @pytest.mark.parametrize("logical_id", ["", " ", "\t\n"])
 def test_set_deployment_plan_rejects_existing_plan_without_logical_id(logical_id):
-    deployed_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id=logical_id)}}
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id=logical_id)}}
+    deployed_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id="target-id")}}
 
     with pytest.raises(InputError, match="logical ID"):
-        set_deployment_plan("Plan", [], {}, deployed_items)
+        set_deployment_plan("Plan", [], repository_items, deployed_items)
 
 
-def test_set_deployment_plan_prefers_plan_in_batch():
+def test_set_deployment_plan_in_batch_does_not_require_target_lookup():
     plan = make_plan(logical_id="batch-id")
-    deployed_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": make_plan(logical_id="deployed-id")}}
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {"Plan": plan}}
+    deployed_items = MagicMock()
 
-    assert set_deployment_plan("Plan", [(plan.name, plan, object())], {}, deployed_items) == {
+    assert set_deployment_plan("Plan", [(plan.name, plan, object())], repository_items, deployed_items) == {
         "deploymentPlan": {"logicalId": "batch-id", "referenceType": "ByLogicalId"},
     }
+    deployed_items.get.assert_not_called()
 
 
 @pytest.mark.parametrize("metadata", [{}, {"logicalId": None}, {"logicalId": "target-plan-id"}])
@@ -150,8 +160,11 @@ def test_bulk_publish_uses_top_level_plan_logical_id():
     publisher = DeploymentPlanPublisher(workspace)
 
     batch = [(plan.name, plan, publisher)]
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {plan.name: plan}}
     FabricWorkspace._publish_items(
-        workspace, batch, deployment_plan_options=set_deployment_plan(workspace.deployment_plan, batch, {}, {})
+        workspace,
+        batch,
+        deployment_plan_options=set_deployment_plan(workspace.deployment_plan, batch, repository_items, {}),
     )
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"] == {
@@ -176,7 +189,8 @@ def test_bulk_publish_preserves_per_item_options_with_plan():
     model_publisher.get_definition_options.return_value = {"allowPurgeData": True}
 
     batch = [(plan.name, plan, DeploymentPlanPublisher(workspace)), (model.name, model, model_publisher)]
-    plan_options = set_deployment_plan(workspace.deployment_plan, batch, {}, {})
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {plan.name: plan}}
+    plan_options = set_deployment_plan(workspace.deployment_plan, batch, repository_items, {})
     FabricWorkspace._publish_items(workspace, batch, deployment_plan_options=plan_options)
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"] == {
@@ -190,7 +204,7 @@ def test_bulk_publish_preserves_per_item_options_with_plan():
 @pytest.mark.parametrize(
     ("plans", "message"),
     [
-        ([], "must be included"),
+        ([], "must exist in the repository"),
         ([make_plan(logical_id="")], "Deployment Plan 'Plan'"),
     ],
 )
@@ -200,7 +214,9 @@ def test_set_deployment_plan_rejects_invalid_plans_before_request(plans, message
     batch = [(plan.name, plan, DeploymentPlanPublisher(workspace)) for plan in plans]
 
     with pytest.raises(InputError, match=message):
-        set_deployment_plan(workspace.deployment_plan, batch, {}, {})
+        set_deployment_plan(
+            workspace.deployment_plan, batch, {ItemType.DEPLOYMENT_PLAN.value: {plan.name: plan for plan in plans}}, {}
+        )
 
     workspace.endpoint.invoke.assert_not_called()
 
@@ -221,8 +237,11 @@ def test_bulk_publish_selects_named_plan_among_multiple_plans():
     publisher = DeploymentPlanPublisher(workspace)
 
     batch = [(p.name, p, publisher) for p in (first, selected)]
+    repository_items = {ItemType.DEPLOYMENT_PLAN.value: {p.name: p for p in (first, selected)}}
     FabricWorkspace._publish_items(
-        workspace, batch, deployment_plan_options=set_deployment_plan(workspace.deployment_plan, batch, {}, {})
+        workspace,
+        batch,
+        deployment_plan_options=set_deployment_plan(workspace.deployment_plan, batch, repository_items, {}),
     )
 
     assert workspace.endpoint.invoke.call_args.kwargs["body"]["options"]["deploymentPlan"] == {

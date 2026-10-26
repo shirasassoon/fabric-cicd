@@ -31,27 +31,30 @@ def set_deployment_plan(
     Sets the deployment plan to be used by the bulk publish operation.
 
     Args:
-        deployment_plan: The name of the deployment plan to use, if provided.
+        deployment_plan: The name of the repository deployment plan to use, if provided.
         items_with_context: A sequence of tuples containing item names, Item objects, and additional context.
         repository_items: Repository items by type and name, including items outside the publish batch.
         deployed_items: Target workspace items by type and name.
 
     Returns:
-        A dictionary containing the logical ID of the deployment plan, or an empty dictionary if no plan is selected.
+        A dictionary containing the repository plan's logical ID, or an empty dictionary if no plan is selected.
 
     """
     if deployment_plan is None:
         return {}
 
-    plan = next(
-        (
-            item
-            for name, item, _ in items_with_context
-            if item.type == ItemType.DEPLOYMENT_PLAN.value and name == deployment_plan
-        ),
-        None,
+    repository_plan = repository_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
+    if repository_plan is None:
+        msg = f"Deployment Plan '{deployment_plan}' must exist in the repository."
+        raise InputError(msg, logger)
+    if not repository_plan.logical_id.strip():
+        msg = f"Cannot retrieve a logical ID for Deployment Plan '{deployment_plan}' from the repository."
+        raise InputError(msg, logger)
+
+    in_publish_batch = any(
+        item.type == ItemType.DEPLOYMENT_PLAN.value and name == deployment_plan for name, item, _ in items_with_context
     )
-    if plan is None:
+    if not in_publish_batch:
         deployed_plan = deployed_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
         if deployed_plan is None:
             msg = (
@@ -59,12 +62,7 @@ def set_deployment_plan(
                 "or already exist in the target workspace."
             )
             raise InputError(msg, logger)
-        repository_plan = repository_items.get(ItemType.DEPLOYMENT_PLAN.value, {}).get(deployment_plan)
-        plan = repository_plan if repository_plan and repository_plan.logical_id.strip() else deployed_plan
 
-    if not plan.logical_id.strip():
-        msg = f"Cannot retrieve a logical ID for Deployment Plan '{deployment_plan}'."
-        raise InputError(msg, logger)
     return {
-        "deploymentPlan": {"logicalId": plan.logical_id, "referenceType": "ByLogicalId"},
+        "deploymentPlan": {"logicalId": repository_plan.logical_id, "referenceType": "ByLogicalId"},
     }

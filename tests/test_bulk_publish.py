@@ -1768,6 +1768,11 @@ class TestBulkPublishDeploymentPlan:
             patched_workspace(mock_endpoint, temp_workspace_dir, item_type_in_scope=item_types) as ws,
             patch.object(ws, "_refresh_deployed_items", side_effect=lambda: refresh_deployed_items(ws)),
         ):
+            if selection == "target_only":
+                with pytest.raises(InputError, match="must exist in the repository"):
+                    publish.publish_all_items(ws, deployment_plan="Plan")
+                assert bodies == []
+                return
             publish.publish_all_items(
                 ws, deployment_plan="Plan", item_name_exclude_regex="^Plan$" if selection == "filtered" else None
             )
@@ -1775,7 +1780,7 @@ class TestBulkPublishDeploymentPlan:
         assert len(bodies) == 1
         assert get_bulk_part_names(bodies[0]) == {"Notebook"}
         assert bodies[0]["options"]["deploymentPlan"] == {
-            "logicalId": "target-plan-id" if selection == "target_only" else "plan-id",
+            "logicalId": "plan-id",
             "referenceType": "ByLogicalId",
         }
 
@@ -1812,14 +1817,16 @@ class TestBulkPublishDeploymentPlan:
         }
         assert bodies[1]["options"] == {"allowPairingByName": True}
 
-    @pytest.mark.parametrize("name", ["Missing", "Plan"])
-    def test_rejects_missing_or_filtered_plan(self, mock_endpoint, temp_workspace_dir, name):
+    @pytest.mark.parametrize(
+        ("name", "message"), [("Missing", "must exist in the repository"), ("Plan", "must be included")]
+    )
+    def test_rejects_missing_or_filtered_plan(self, mock_endpoint, temp_workspace_dir, name, message):
         create_test_item_dir(temp_workspace_dir, None, "Plan", "DeploymentPlan", "plan-id")
         bodies = capture_bulk_bodies(mock_endpoint)
 
         with (
             patched_workspace(mock_endpoint, temp_workspace_dir, item_type_in_scope=["DeploymentPlan"]) as ws,
-            pytest.raises(InputError, match="must be included"),
+            pytest.raises(InputError, match=message),
         ):
             publish.publish_all_items(ws, deployment_plan=name, item_name_exclude_regex="^Plan$")
 
