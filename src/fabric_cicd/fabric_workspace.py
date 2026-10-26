@@ -576,6 +576,7 @@ class FabricWorkspace:
                 name=item_name,
                 description=item_description,
                 guid=item_guid,
+                logical_id=item.get("logicalId") or "",
                 folder_id=item_folder_id,
             )
 

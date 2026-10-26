@@ -56,7 +56,7 @@ def publish_all_items(
         folder_path_to_include: List of folder paths in the format "/folder_name"; only the specified folders and their items will be published.
         items_to_include: List of items in the format "item_name.item_type" that should be published.
         shortcut_exclude_regex: Regex pattern to exclude specific shortcuts from being published in lakehouses.
-        deployment_plan: Name of the repository Deployment Plan item that is applied to the deployment. Supported in bulk publish mode only.
+        deployment_plan: Name of the Deployment Plan item to apply, either included in the publish batch or already present in the target workspace with a logical ID available from the repository or target. Supported in bulk publish mode only.
 
     Returns:
         Dict containing all API responses if the ``enable_response_collection`` feature flag is enabled

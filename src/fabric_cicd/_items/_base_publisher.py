@@ -366,7 +366,12 @@ class ItemPublisher(Publisher):
             publishers.append(publisher)
 
         # Set the deployment plan, if specified
-        deployment_plan_options = set_deployment_plan(fabric_workspace_obj.deployment_plan, items_with_context)
+        deployment_plan_options = set_deployment_plan(
+            fabric_workspace_obj.deployment_plan,
+            items_with_context,
+            fabric_workspace_obj.repository_items,
+            fabric_workspace_obj.deployed_items,
+        )
 
         # Phase 2: Batched bulk API calls (publisher context used inside for per-item transforms)
         if items_with_context:

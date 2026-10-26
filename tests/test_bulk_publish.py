@@ -1741,6 +1741,44 @@ class TestBulkPublishPurgeData:
 class TestBulkPublishDeploymentPlan:
     """Tests for explicit deployment plan selection through the public API."""
 
+    @pytest.mark.parametrize("selection", ["out_of_scope", "filtered", "target_only"])
+    def test_applies_existing_plan_without_publishing_it(self, mock_endpoint, temp_workspace_dir, selection):
+        create_test_item_dir(temp_workspace_dir, None, "Notebook", "Notebook", "notebook-id")
+        if selection != "target_only":
+            create_test_item_dir(temp_workspace_dir, None, "Plan", "DeploymentPlan", "plan-id")
+        target_plan = {
+            "type": "DeploymentPlan",
+            "displayName": "Plan",
+            "description": "",
+            "id": "target-item-id",
+            "logicalId": "target-plan-id" if selection == "target_only" else None,
+        }
+        original_invoke = mock_endpoint.invoke.side_effect
+
+        def invoke(method, url, **kwargs):
+            if method == "GET" and url.endswith("/items"):
+                return {"body": {"value": [target_plan]}}
+            return original_invoke(method, url, **kwargs)
+
+        mock_endpoint.invoke.side_effect = invoke
+        bodies = capture_bulk_bodies(mock_endpoint)
+        refresh_deployed_items = FabricWorkspace._refresh_deployed_items
+        item_types = ["Notebook", "DeploymentPlan"] if selection == "filtered" else ["Notebook"]
+        with (
+            patched_workspace(mock_endpoint, temp_workspace_dir, item_type_in_scope=item_types) as ws,
+            patch.object(ws, "_refresh_deployed_items", side_effect=lambda: refresh_deployed_items(ws)),
+        ):
+            publish.publish_all_items(
+                ws, deployment_plan="Plan", item_name_exclude_regex="^Plan$" if selection == "filtered" else None
+            )
+
+        assert len(bodies) == 1
+        assert get_bulk_part_names(bodies[0]) == {"Notebook"}
+        assert bodies[0]["options"]["deploymentPlan"] == {
+            "logicalId": "target-plan-id" if selection == "target_only" else "plan-id",
+            "referenceType": "ByLogicalId",
+        }
+
     def test_resolves_plan_only_once(self, mock_endpoint, temp_workspace_dir):
         create_test_item_dir(temp_workspace_dir, None, "Plan", "DeploymentPlan", "plan-id")
         bodies = capture_bulk_bodies(mock_endpoint)

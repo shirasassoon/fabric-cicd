@@ -76,7 +76,7 @@
 - **Application:**
     - Applying a deployment plan deploys items in the order specified in the plan and runs the intermediate actions it defines.
     - Publishing a deployment plan item does not automatically apply it. To apply it during publishing, specify its exact display name using the `publish.deployment_plan` configuration field or the optional `deployment_plan` argument to [`publish_all_items()`](code_reference.md#fabric_cicd.publish_all_items).
-    - Applying a plan requires **bulk publish mode**, and the selected plan must be included in the items being published.
+    - Applying a plan requires **bulk publish mode**. The selected plan must either be included in the items being published or already exist in the target workspace, with its logical ID available from the repository or target workspace.
     - See [Deployment Plan Option](../how_to/config_deployment.md#deployment-plan-option) for configuration details and limitations.
 
 ## Environment
