@@ -96,7 +96,8 @@
   When enabled, it pauses all running sources in each deployed Eventstream, not just private endpoint
   sources, before updating the definition. It then attempts to resume those sources afterward. Excluded Eventstreams are not
   queried, paused, or resumed. If a source remains paused after a resume failure, manual recovery
-  may be required.
+  may be required. Sources are paused and resumed only when updating an existing Eventstream.
+  New Eventstreams skip these steps.
 
 ## Graph Model
 
