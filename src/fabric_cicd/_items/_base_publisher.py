@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from typing import Callable, Optional
 
 from fabric_cicd import constants
-from fabric_cicd._common._exceptions import PublishError
+from fabric_cicd._common._exceptions import CleanupError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd.constants import PARALLEL_MAX_WORKERS, ItemType
 from fabric_cicd.fabric_workspace import FabricWorkspace
@@ -508,6 +508,7 @@ class ItemPublisher(Publisher):
                 raise PublishError.from_operation_error(error, cleanup_errors, logger) from error
             raise
 
+        self._raise_cleanup_errors(cleanup_errors)
         self.post_publish_all()
 
     def publish_one(self, item_name: str, _item: "Item") -> None:
@@ -609,7 +610,8 @@ class ItemPublisher(Publisher):
         """
         Clean up one publish operation or bulk batch, even after partial setup failure.
 
-        Subclasses should attempt all cleanup actions before raising an error.
+        Subclasses should attempt all cleanup actions before raising an error. Use
+        CleanupError to retain resource-specific failures; the lifecycle logs them.
         The default is a no-op.
         """
         pass
@@ -628,16 +630,17 @@ class ItemPublisher(Publisher):
         reverse setup order. Repeat for each batch; types absent from a batch are skipped.
 
         Subclasses override the no-op setup() and/or cleanup() hooks, not this method.
-        Cleanup runs even after partial setup failure; its errors propagate only if setup
-        and publishing succeeded, otherwise they are logged without masking the original.
-        Orchestrators collect secondary cleanup errors locally and include them in the final
-        PublishError. Standalone lifecycle callers retain the original exception unchanged.
+        Cleanup runs even after partial setup failure. With a collector, all cleanup failures
+        are deferred until every publisher has cleaned up, keeping them separate from setup
+        and publishing failures. Without a collector, cleanup errors propagate only if setup
+        and publishing succeeded. A single underlying cleanup exception propagates unchanged;
+        CleanupError retains multiple resource failures. The lifecycle logs each failure once.
         Calls on the same publisher must not overlap. Hooks sharing instance state must
         reset it per operation, since a publisher may be reused across bulk batches.
 
         Args:
             items: The Item objects of this type being published.
-            cleanup_errors: Optional per-operation collector for secondary cleanup failures.
+            cleanup_errors: Optional per-operation collector for all cleanup failures.
         """
         setup_or_publish_failed = False
         try:
@@ -650,11 +653,32 @@ class ItemPublisher(Publisher):
             try:
                 self.cleanup(items)
             except Exception as error:
-                logger.exception("Failed to clean up after item publishing")
-                if not setup_or_publish_failed:
-                    raise
+                cleanup_error = error
+                if isinstance(error, CleanupError):
+                    for context, failure in error.errors:
+                        logger.error(
+                            "Failed to clean up after item publishing: %s",
+                            context,
+                            exc_info=(type(failure), failure, failure.__traceback__),
+                        )
+                    if len(error.errors) == 1:
+                        cleanup_error = error.errors[0][1]
+                else:
+                    logger.exception("Failed to clean up after item publishing")
                 if cleanup_errors is not None:
-                    cleanup_errors.append((self.item_type, error))
+                    cleanup_errors.append((self.item_type, cleanup_error))
+                elif not setup_or_publish_failed:
+                    if cleanup_error is error:
+                        raise
+                    raise cleanup_error from None
+
+    @staticmethod
+    def _raise_cleanup_errors(cleanup_errors: list[tuple[str, Exception]]) -> None:
+        """Raise cleanup-only failures after all cleanup actions have completed."""
+        if len(cleanup_errors) == 1:
+            raise cleanup_errors[0][1]
+        if cleanup_errors:
+            raise PublishError([], logger, cleanup_errors=cleanup_errors) from cleanup_errors[0][1]
 
     @staticmethod
     @contextmanager
@@ -676,6 +700,8 @@ class ItemPublisher(Publisher):
             if cleanup_errors:
                 raise PublishError.from_operation_error(error, cleanup_errors, logger) from error
             raise
+
+        ItemPublisher._raise_cleanup_errors(cleanup_errors)
 
     def post_publish_all_check(self) -> None:
         """

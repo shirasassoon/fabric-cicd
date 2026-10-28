@@ -296,8 +296,9 @@ def test_batch_lifecycle_reports_every_cleanup_failure(operation_fails, item_err
     assert events == ["second", "first"]
     expected_cleanups = [("Eventstream", second_cleanup_error), ("Lakehouse", first_cleanup_error)]
     if not operation_fails:
-        assert error.operation_error is second_cleanup_error
-        expected_cleanups = [("Lakehouse", first_cleanup_error)]
+        assert error.operation_error is None
+        assert error.errors == []
+        assert str(error).startswith("Publishing succeeded, but cleanup failed:")
     elif item_errors:
         assert error.errors == operation_error.errors
         assert error.operation_error is None
@@ -348,3 +349,58 @@ def test_cleanup_errors_do_not_leak_between_publish_operations(mocker):
 
     assert first.value.cleanup_errors == [("Lakehouse", cleanup_error)]
     assert second.value.cleanup_errors == []
+
+
+@pytest.mark.parametrize("failing_publisher", ["first", "second"])
+def test_single_batch_cleanup_failure_is_unchanged(failing_publisher, mocker):
+    first = _StubPublisher([], None)
+    second = _StubPublisher([], None)
+    error = RuntimeError("Cleanup failed")
+    events = []
+
+    def cleanup(name):
+        events.append(name)
+        if name == failing_publisher:
+            raise error
+
+    mocker.patch.object(first, "cleanup", side_effect=lambda _items: cleanup("first"))
+    mocker.patch.object(second, "cleanup", side_effect=lambda _items: cleanup("second"))
+    batch = [("LakehouseA", MagicMock(), first), ("LakehouseB", MagicMock(), second)]
+
+    def publish_batch():
+        with ItemPublisher._batch_publish_lifecycle(batch):
+            events.append("publish")
+
+    with pytest.raises(RuntimeError) as raised:
+        publish_batch()
+
+    assert raised.value is error
+    assert events == ["publish", "second", "first"]
+
+
+def test_batch_setup_failure_retains_all_cleanup_failures(mocker):
+    first = _StubPublisher([], None)
+    second = _StubPublisher([], None)
+    second.item_type = "Eventstream"
+    setup_error = RuntimeError("Second setup failed")
+    first_cleanup_error = RuntimeError("First cleanup failed")
+    second_cleanup_error = RuntimeError("Second cleanup failed")
+    mocker.patch.object(second, "setup", side_effect=setup_error)
+    first_cleanup = mocker.patch.object(first, "cleanup", side_effect=first_cleanup_error)
+    second_cleanup = mocker.patch.object(second, "cleanup", side_effect=second_cleanup_error)
+    batch = [("LakehouseA", MagicMock(), first), ("Stream", MagicMock(), second)]
+    publish = mocker.Mock()
+
+    def publish_batch():
+        with ItemPublisher._batch_publish_lifecycle(batch):
+            publish()
+
+    with pytest.raises(PublishError) as raised:
+        publish_batch()
+
+    assert raised.value.operation_error is setup_error
+    assert raised.value.__cause__ is setup_error
+    assert raised.value.cleanup_errors == [("Eventstream", second_cleanup_error), ("Lakehouse", first_cleanup_error)]
+    first_cleanup.assert_called_once()
+    second_cleanup.assert_called_once()
+    publish.assert_not_called()

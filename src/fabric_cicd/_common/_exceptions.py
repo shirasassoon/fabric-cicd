@@ -54,6 +54,23 @@ class FailedPublishedItemStatusError(BaseCustomError):
     pass
 
 
+class CleanupError(BaseCustomError):
+    """Retain every cleanup failure with its resource context and request details."""
+
+    def __init__(self, errors: list[tuple[str, Exception]], logger: Logger) -> None:
+        """Initialize with resource descriptions and their original exceptions."""
+        self.errors = list(errors)
+        details = "; ".join(f"{context}: {error}" for context, error in self.errors)
+        additional_info_parts = []
+        for context, error in self.errors:
+            error_info = f"\n--- {context} ---\n{error}"
+            request_info = getattr(error, "additional_info", None)
+            if request_info:
+                error_info += f"\n{request_info}"
+            additional_info_parts.append(error_info)
+        super().__init__(f"Cleanup failed: {details}", logger, "\n".join(additional_info_parts))
+
+
 class PublishError(BaseCustomError):
     """Exception raised when one or more publish operations fail.
 
@@ -84,9 +101,12 @@ class PublishError(BaseCustomError):
             if operation_error is not None
             else f"Failed to publish {len(errors)} item(s): {failed_names}"
         )
+        cleanup_only = bool(self.cleanup_errors) and not errors and operation_error is None
+        if cleanup_only:
+            message = "Publishing succeeded, but cleanup failed"
         if self.cleanup_errors:
             cleanup_details = "; ".join(f"{item_type}: {exc}" for item_type, exc in self.cleanup_errors)
-            message += f". Cleanup also failed: {cleanup_details}"
+            message += f": {cleanup_details}" if cleanup_only else f". Cleanup also failed: {cleanup_details}"
         if post_publish_error is not None:
             message += f". The post-publish step also failed: {post_publish_error}"
 

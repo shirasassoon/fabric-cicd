@@ -98,6 +98,10 @@
   queried, paused, or resumed. If a source remains paused after a resume failure, manual recovery
   may be required. Sources are paused and resumed only when updating an existing Eventstream.
   New Eventstreams skip these steps.
+  Each failed source resume is logged once. Multiple resume failures retain the source IDs,
+  original exceptions, and request details. If several publishers fail cleanup after a successful
+  bulk publish, the final error reports that publishing succeeded but cleanup failed, with all
+  failures in `cleanup_errors`.
 
 ## Graph Model
 
