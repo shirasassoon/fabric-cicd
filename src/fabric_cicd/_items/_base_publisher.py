@@ -437,7 +437,7 @@ class ItemPublisher(Publisher):
         2. Gets items via get_items_to_publish() and applies publish filters
         3. Publishes items (parallel or sequential based on parallel_config)
         4. Calls post_publish_all() for any finalization
-        5. Raises PublishError if any items failed
+        5. Raises PublishError if any items failed, including a post_publish_all() error if that also failed
 
         The parallel_config class attribute controls execution:
         - If ordered_items_func is set: publishes in that order sequentially
@@ -445,7 +445,8 @@ class ItemPublisher(Publisher):
         - If enabled=False: publishes sequentially
 
         Raises:
-            PublishError: If one or more items failed to publish.
+            PublishError: If one or more items failed to publish. If post_publish_all() also
+                raised, its error is in ``post_publish_error`` and in the message.
         """
         self.pre_publish_all()
         items = self.get_items_to_publish()
@@ -485,7 +486,13 @@ class ItemPublisher(Publisher):
             self.post_publish_all()
             raise
 
-        self.post_publish_all()
+        try:
+            self.post_publish_all()
+        except Exception as e:
+            # Keep the item failures in the exception
+            if errors:
+                raise PublishError(errors, logger, post_publish_error=e) from e
+            raise
 
     def publish_one(self, item_name: str, _item: "Item") -> None:
         """
