@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from fabric_cicd import constants
-from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InvokeError, PublishError
+from fabric_cicd._common._exceptions import CleanupError, FailedPublishedItemStatusError, InvokeError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher, ParallelConfig
 from fabric_cicd._items._lakehouse import LakehousePublisher
@@ -335,6 +335,77 @@ def test_cleanup_aggregation_preserves_existing_error_details():
     assert "Binding request log" in combined.additional_info
     assert "First cleanup failed" in combined.additional_info
     assert "Second cleanup failed" in combined.additional_info
+
+
+@pytest.mark.parametrize("operation_info", [None, "", "Operation request\nStatus: 403"])
+@pytest.mark.parametrize("cleanup_info", [None, "", "Cleanup request\nStatus: 409"])
+def test_publish_error_preserves_diagnostic_formatting(operation_info, cleanup_info):
+    item_error = InvokeError("Definition rejected", logger, "Item request log")
+    operation_error = InvokeError("Bulk import failed", logger, operation_info)
+    cleanup_error = InvokeError("Resume failed", logger, cleanup_info)
+    post_error = InvokeError("Binding failed", logger, "Post-publish request")
+
+    error = PublishError(
+        [("LakehouseA", item_error)],
+        logger,
+        post_error,
+        cleanup_errors=[("Eventstream", cleanup_error)],
+        operation_error=operation_error,
+    )
+
+    expected_operation_info = f"\n{operation_info}" if operation_info else ""
+    expected_cleanup_info = f"\n{cleanup_info}" if cleanup_info else ""
+    assert error.additional_info == (
+        "\n--- LakehouseA ---\nDefinition rejected"
+        "\n\n--- publish operation ---\nBulk import failed"
+        f"{expected_operation_info}"
+        "\n\n--- cleanup (Eventstream) ---\nResume failed"
+        f"{expected_cleanup_info}"
+        "\n\n--- post_publish_all ---\nPost-publish request"
+    )
+
+
+@pytest.mark.parametrize("request_info", [None, "", "Resume request\nStatus: 403"])
+def test_cleanup_error_preserves_diagnostic_formatting(request_info):
+    error = CleanupError(
+        [
+            ("SourceOne", InvokeError("Resume failed", logger, request_info)),
+            ("SourceTwo", RuntimeError("Resume timed out")),
+        ],
+        logger,
+    )
+
+    expected_request_info = f"\n{request_info}" if request_info else ""
+    assert str(error) == "Cleanup failed: SourceOne: Resume failed; SourceTwo: Resume timed out"
+    assert error.additional_info == (
+        f"\n--- SourceOne ---\nResume failed{expected_request_info}\n\n--- SourceTwo ---\nResume timed out"
+    )
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_message"),
+    [
+        ("items", "Failed to publish 1 item(s): ['LakehouseA']. Cleanup also failed: Eventstream: Resume failed"),
+        ("operation", "Publish operation failed: Bulk import failed. Cleanup also failed: Eventstream: Resume failed"),
+        ("cleanup", "Publishing succeeded, but cleanup failed: Eventstream: Resume failed"),
+        ("empty", "Failed to publish 0 item(s): []"),
+    ],
+)
+@pytest.mark.parametrize("post_publish_fails", [False, True])
+def test_publish_error_preserves_message_formatting(failure_kind, expected_message, post_publish_fails):
+    error = PublishError(
+        [("LakehouseA", RuntimeError("Definition rejected"))] if failure_kind == "items" else [],
+        logger,
+        RuntimeError("Binding failed") if post_publish_fails else None,
+        cleanup_errors=[("Eventstream", RuntimeError("Resume failed"))] if failure_kind != "empty" else None,
+        operation_error=RuntimeError("Bulk import failed") if failure_kind == "operation" else None,
+    )
+
+    if post_publish_fails:
+        expected_message += ". The post-publish step also failed: Binding failed"
+    assert str(error) == expected_message
+    if failure_kind == "empty":
+        assert error.additional_info is None
 
 
 def test_cleanup_errors_do_not_leak_between_publish_operations(mocker):
