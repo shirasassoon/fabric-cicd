@@ -7,7 +7,7 @@ import logging
 import time
 
 from fabric_cicd import FabricWorkspace, constants
-from fabric_cicd._common._exceptions import EventstreamSourceResumeError
+from fabric_cicd._common._exceptions import ItemCleanupError
 from fabric_cicd._common._fabric_endpoint import handle_retry
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher
@@ -126,11 +126,12 @@ class EventstreamPublisher(ItemPublisher):
         """Attempt all sources and raise a custom error containing every resume failure."""
         paused_sources = self._paused_sources
         self._paused_sources = []
-        resume_errors: list[tuple[str, str, Exception]] = []
+        resume_errors: list[tuple[str, Exception]] = []
         for eventstream_guid, source in paused_sources:
             try:
                 _resume_source(self.fabric_workspace_obj, eventstream_guid, source)
             except Exception as error:
-                resume_errors.append((eventstream_guid, source["id"], error))
+                label = f"Resume Eventstream source '{source['id']}' in Eventstream '{eventstream_guid}'"
+                resume_errors.append((label, error))
         if resume_errors:
-            raise EventstreamSourceResumeError(resume_errors, logger) from resume_errors[0][2]
+            raise ItemCleanupError(resume_errors, logger) from resume_errors[0][1]

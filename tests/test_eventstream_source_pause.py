@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from fabric_cicd import FabricWorkspace, constants, get_supported_feature_flags
-from fabric_cicd._common._exceptions import BaseCustomError, EventstreamSourceResumeError, InvokeError, PublishError
+from fabric_cicd._common._exceptions import BaseCustomError, InvokeError, ItemCleanupError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher, ParallelConfig
 from fabric_cicd._items._eventstream import EventstreamPublisher
@@ -357,7 +357,7 @@ def test_resume_failures_are_reported_without_masking_publish_error(publish_fail
         if publish_fails:
             raise publish_error
 
-    expected_error = RuntimeError if publish_fails else EventstreamSourceResumeError
+    expected_error = RuntimeError if publish_fails else ItemCleanupError
     with pytest.raises(expected_error) as raised, publisher.publish_lifecycle([_make_item()]):
         publish()
 
@@ -376,7 +376,8 @@ def test_resume_failures_are_reported_without_masking_publish_error(publish_fail
         error_text = caplog.text
     else:
         assert raised.value.errors == [
-            (EVENTSTREAM_GUID, f"source-{index}", error) for index, error in enumerate(resume_errors, start=1)
+            (f"Resume Eventstream source 'source-{index}' in Eventstream '{EVENTSTREAM_GUID}'", error)
+            for index, error in enumerate(resume_errors, start=1)
         ]
         assert raised.value.__cause__ is resume_errors[0]
         error_text = str(raised.value)
@@ -429,7 +430,7 @@ def test_multiple_resume_failures_are_reported_without_masking_original_error(
         else:
             publisher.publish_all()
 
-    expected_error = EventstreamSourceResumeError
+    expected_error = ItemCleanupError
     if publish_fails:
         expected_error = PublishError if publish_mode == "standard" else RuntimeError
     with pytest.raises(expected_error) as raised:
@@ -445,7 +446,8 @@ def test_multiple_resume_failures_are_reported_without_masking_original_error(
             assert error.__cause__ is post_error
     else:
         assert raised.value.errors == [
-            (EVENTSTREAM_GUID, source_id, error) for source_id, error in resume_errors.items()
+            (f"Resume Eventstream source '{source_id}' in Eventstream '{EVENTSTREAM_GUID}'", error)
+            for source_id, error in resume_errors.items()
         ]
         for source_id in resume_errors:
             assert f"Request log: {source_id}" in raised.value.additional_info
@@ -466,19 +468,19 @@ def test_eventstream_cleanup_collects_each_resume_failure(mocker):
     errors = [RuntimeError("First resume failed"), RuntimeError("Last resume failed")]
     resume = mocker.patch("fabric_cicd._items._eventstream._resume_source", side_effect=[errors[0], None, errors[1]])
 
-    with pytest.raises(EventstreamSourceResumeError) as raised:
+    with pytest.raises(ItemCleanupError) as raised:
         publisher.cleanup([_make_item()])
 
     assert resume.call_args_list == [mocker.call(workspace, EVENTSTREAM_GUID, source) for source in sources]
     assert isinstance(raised.value, BaseCustomError)
     assert raised.value.logger.name == "fabric_cicd._items._eventstream"
     assert raised.value.errors == [
-        (EVENTSTREAM_GUID, "source-1", errors[0]),
-        (EVENTSTREAM_GUID, "source-3", errors[1]),
+        (f"Resume Eventstream source 'source-1' in Eventstream '{EVENTSTREAM_GUID}'", errors[0]),
+        (f"Resume Eventstream source 'source-3' in Eventstream '{EVENTSTREAM_GUID}'", errors[1]),
     ]
     assert raised.value.__cause__ is errors[0]
     assert publisher._paused_sources == []
-    assert "2 Eventstream source(s)" in str(raised.value)
+    assert "2 item cleanup action(s)" in str(raised.value)
     assert "source-1" in str(raised.value)
     assert "source-3" in str(raised.value)
     for error in errors:
@@ -572,10 +574,12 @@ def test_resume_does_not_retry_api_failures(error_message, mocker):
         return invoke(method, url, **kwargs)
 
     workspace.endpoint.invoke.side_effect = fail_resume
-    with pytest.raises(EventstreamSourceResumeError) as raised, publisher.publish_lifecycle([_make_item()]):
+    with pytest.raises(ItemCleanupError) as raised, publisher.publish_lifecycle([_make_item()]):
         pass
 
-    assert raised.value.errors == [(EVENTSTREAM_GUID, SOURCE_ID, error)]
+    assert raised.value.errors == [
+        (f"Resume Eventstream source '{SOURCE_ID}' in Eventstream '{EVENTSTREAM_GUID}'", error)
+    ]
     assert raised.value.__cause__ is error
     resume_calls = [call for call in workspace.endpoint.invoke.call_args_list if call.kwargs["url"].endswith("/resume")]
     assert len(resume_calls) == 1
@@ -738,7 +742,7 @@ def test_publish_orchestration_orders_pause_publish_and_resume(
             if publish_fails and publish_mode != "bulk"
             else RuntimeError
             if publish_fails
-            else EventstreamSourceResumeError
+            else ItemCleanupError
         )
         with pytest.raises(expected_error) as raised:
             run_publish()
@@ -747,7 +751,9 @@ def test_publish_orchestration_orders_pause_publish_and_resume(
         elif publish_fails:
             assert raised.value is publish_error
         else:
-            assert raised.value.errors == [(EVENTSTREAM_GUID, SOURCE_ID, resume_error)]
+            assert raised.value.errors == [
+                (f"Resume Eventstream source '{SOURCE_ID}' in Eventstream '{EVENTSTREAM_GUID}'", resume_error)
+            ]
 
     expected_events = ["pre", "topology:Running", "pause", "topology:Paused", "publish", "resume"]
     if outcome == "success" or (publish_fails and publish_mode != "bulk"):
@@ -857,12 +863,14 @@ def test_publish_lifecycle_preserves_errors(failure_stage, cleanup_fails, caplog
                 raise operation_error
 
     if failure_stage is not None or cleanup_fails:
-        with pytest.raises(RuntimeError if failure_stage is not None else EventstreamSourceResumeError) as raised:
+        with pytest.raises(RuntimeError if failure_stage is not None else ItemCleanupError) as raised:
             run_publish()
         if failure_stage is not None:
             assert raised.value is operation_error
         else:
-            assert raised.value.errors == [(EVENTSTREAM_GUID, SOURCE_ID, cleanup_error)]
+            assert raised.value.errors == [
+                (f"Resume Eventstream source '{SOURCE_ID}' in Eventstream '{EVENTSTREAM_GUID}'", cleanup_error)
+            ]
     else:
         run_publish()
 
@@ -899,7 +907,7 @@ def test_single_cleanup_failure_preserves_exception_chain(chain_kind, mocker):
         with publisher.publish_lifecycle([_make_item()]):
             pass
 
-    with pytest.raises(EventstreamSourceResumeError) as raised:
+    with pytest.raises(ItemCleanupError) as raised:
         run_publish()
 
     error = raised.value
@@ -973,7 +981,7 @@ def test_eventstream_lifecycle_clears_state_between_operations(cleanup_fails, mo
 
     if cleanup_fails:
         with (
-            pytest.raises(EventstreamSourceResumeError, match="Resume failed"),
+            pytest.raises(ItemCleanupError, match="Resume failed"),
             publisher.publish_lifecycle([_make_item()]),
         ):
             pass

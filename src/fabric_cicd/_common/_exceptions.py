@@ -55,21 +55,24 @@ class FailedPublishedItemStatusError(BaseCustomError):
     pass
 
 
-class EventstreamSourceResumeError(BaseCustomError):
-    """Raised after attempting all sources when one or more fail to resume."""
+class ItemCleanupError(BaseCustomError):
+    """Raised after cleanup when one or more actions fail.
 
-    def __init__(self, errors: list[tuple[str, str, Exception]], logger: Logger) -> None:
+    Attributes:
+        errors: List of (context_label, exception) tuples for failed cleanup actions.
+    """
+
+    def __init__(self, errors: list[tuple[str, Exception]], logger: Logger) -> None:
         self.errors = errors
         failures = []
         details = []
-        for eventstream_id, source_id, error in errors:
-            label = f"Eventstream source '{source_id}' in Eventstream '{eventstream_id}'"
+        for label, error in errors:
             failures.append(f"{label}: {error}")
             details.append(f"--- {label} ---\n{''.join(format_exception(type(error), error, error.__traceback__))}")
             additional_info = getattr(error, "additional_info", None)
             if additional_info:
                 details.append(additional_info)
-        message = f"Failed to resume {len(errors)} Eventstream source(s):\n" + "\n".join(failures)
+        message = f"Failed to complete {len(errors)} item cleanup action(s):\n" + "\n".join(failures)
         super().__init__(message, logger, "\n".join(details))
 
 
