@@ -92,9 +92,9 @@
     - Destinations connected to items within the same workspace are re-pointed to the new item in the target workspace.
 - **Initial deployment** requires waiting for the table to populate in the destination lakehouse if a lakehouse destination is present in the eventstream.
 - **Private endpoint sources:** Enable the
-  [`enable_eventstream_source_pause`](../how_to/optional_feature.md#feature-flags) feature flag.
-  This pauses running sources before updating the Eventstream definition to prevent Fabric from
-  rejecting the update, then attempts to resume them afterward. Excluded Eventstreams are not
+  [`enable_eventstream_source_pause`](../how_to/optional_feature.md#feature-flags) feature flag when deploying Eventstreams that contain private endpoint sources.
+  When enabled, it pauses all running sources in each deployed Eventstream, not just private endpoint
+  sources, before updating the definition. It then attempts to resume those sources afterward. Excluded Eventstreams are not
   queried, paused, or resumed. If a source remains paused after a resume failure, manual recovery
   may be required.
 
