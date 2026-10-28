@@ -446,7 +446,8 @@ class ItemPublisher(Publisher):
 
         Raises:
             PublishError: If one or more items failed to publish. If post_publish_all() also
-                raised, its error is in ``post_publish_error`` and in the message.
+                raised, its error is in ``post_publish_error`` and in the message. Cleanup
+                failures accompanying an earlier failure are retained in ``cleanup_errors``.
         """
         self.pre_publish_all()
         items = self.get_items_to_publish()
@@ -468,10 +469,11 @@ class ItemPublisher(Publisher):
             return
 
         config = getattr(self.__class__, "parallel_config", ParallelConfig())
+        cleanup_errors: list[tuple[str, Exception]] = []
 
         # Run the publisher's setup before standard publishing and cleanup afterward
         try:
-            with self.publish_lifecycle(list(items.values())):
+            with self.publish_lifecycle(list(items.values()), cleanup_errors=cleanup_errors):
                 if config.ordered_items_func is not None:
                     order = config.ordered_items_func(self)
                     errors = self._publish_items_ordered(items, order)
@@ -482,17 +484,31 @@ class ItemPublisher(Publisher):
 
                 if errors:
                     raise PublishError(errors, logger)
-        except PublishError:
-            self.post_publish_all()
+        except PublishError as publish_error:
+            combined_error = (
+                PublishError.from_operation_error(publish_error, cleanup_errors, logger)
+                if cleanup_errors
+                else publish_error
+            )
+            try:
+                self.post_publish_all()
+            except Exception as e:
+                raise PublishError(
+                    combined_error.errors,
+                    logger,
+                    post_publish_error=e,
+                    cleanup_errors=combined_error.cleanup_errors,
+                    operation_error=combined_error.operation_error,
+                ) from e
+            if cleanup_errors:
+                raise combined_error from publish_error
+            raise
+        except Exception as error:
+            if cleanup_errors:
+                raise PublishError.from_operation_error(error, cleanup_errors, logger) from error
             raise
 
-        try:
-            self.post_publish_all()
-        except Exception as e:
-            # Keep the item failures in the exception
-            if errors:
-                raise PublishError(errors, logger, post_publish_error=e) from e
-            raise
+        self.post_publish_all()
 
     def publish_one(self, item_name: str, _item: "Item") -> None:
         """
@@ -578,7 +594,7 @@ class ItemPublisher(Publisher):
 
     def post_publish_all(self) -> None:
         """
-        Hook called after all items have been published successfully.
+        Hook called after publishing items, even when individual items failed.
 
         Subclasses can override to perform cleanup, binding, or finalization.
         Default implementation does nothing.
@@ -599,7 +615,9 @@ class ItemPublisher(Publisher):
         pass
 
     @contextmanager
-    def publish_lifecycle(self, items: list["Item"]) -> Generator[None, None, None]:
+    def publish_lifecycle(
+        self, items: list["Item"], *, cleanup_errors: Optional[list[tuple[str, Exception]]] = None
+    ) -> Generator[None, None, None]:
         """
         Run item-type setup and cleanup around publishing (pre/post-publish hooks are separate).
 
@@ -612,11 +630,14 @@ class ItemPublisher(Publisher):
         Subclasses override the no-op setup() and/or cleanup() hooks, not this method.
         Cleanup runs even after partial setup failure; its errors propagate only if setup
         and publishing succeeded, otherwise they are logged without masking the original.
+        Orchestrators collect secondary cleanup errors locally and include them in the final
+        PublishError. Standalone lifecycle callers retain the original exception unchanged.
         Calls on the same publisher must not overlap. Hooks sharing instance state must
         reset it per operation, since a publisher may be reused across bulk batches.
 
         Args:
             items: The Item objects of this type being published.
+            cleanup_errors: Optional per-operation collector for secondary cleanup failures.
         """
         setup_or_publish_failed = False
         try:
@@ -628,10 +649,12 @@ class ItemPublisher(Publisher):
         finally:
             try:
                 self.cleanup(items)
-            except Exception:
+            except Exception as error:
                 logger.exception("Failed to clean up after item publishing")
                 if not setup_or_publish_failed:
                     raise
+                if cleanup_errors is not None:
+                    cleanup_errors.append((self.item_type, error))
 
     @staticmethod
     @contextmanager
@@ -643,10 +666,16 @@ class ItemPublisher(Publisher):
         for _, item, publisher in batch_items:
             items_by_publisher[publisher].append(item)
 
-        with ExitStack() as batch_stack:
-            for publisher, items in items_by_publisher.items():
-                batch_stack.enter_context(publisher.publish_lifecycle(items))
-            yield
+        cleanup_errors: list[tuple[str, Exception]] = []
+        try:
+            with ExitStack() as batch_stack:
+                for publisher, items in items_by_publisher.items():
+                    batch_stack.enter_context(publisher.publish_lifecycle(items, cleanup_errors=cleanup_errors))
+                yield
+        except Exception as error:
+            if cleanup_errors:
+                raise PublishError.from_operation_error(error, cleanup_errors, logger) from error
+            raise
 
     def post_publish_all_check(self) -> None:
         """

@@ -96,7 +96,12 @@
   This pauses running sources before updating the Eventstream definition to prevent Fabric from
   rejecting the update, then attempts to resume them afterward. Excluded Eventstreams are not
   queried, paused, or resumed. If a source remains paused after a resume failure, manual recovery
-  may be required.
+  may be required. When publishing or setup and source resumption both fail, the final
+  `PublishError` includes the original failure and the cleanup failure(s) in `cleanup_errors`,
+  identified by item type. Request/response details are retained in `additional_info`.
+  Standard publishing also includes a post-publish failure in `post_publish_error` if that
+  step fails. Bulk publishing still stops before post-publish hooks when a batch fails.
+  A resumption failure without an earlier failure propagates unchanged.
 
 ## Graph Model
 

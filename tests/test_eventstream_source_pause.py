@@ -540,7 +540,7 @@ def test_publish_filters_eventstreams_before_setup(
         post_publish.assert_not_called()
     if include_publishable_item:
         assert included_item.skip_publish is False
-        context.assert_called_once_with([included_item])
+        context.assert_called_once_with([included_item], cleanup_errors=[])
         if publish_mode == "bulk":
             publish_one.assert_not_called()
             publish_bulk.assert_called_once_with(
@@ -622,15 +622,21 @@ def test_publish_orchestration_orders_pause_publish_and_resume(
     else:
         expected_error = (
             PublishError
-            if publish_fails and publish_mode != "bulk"
+            if publish_fails and (publish_mode != "bulk" or resume_fails)
             else type(publish_error if publish_fails else resume_error)
         )
         with pytest.raises(expected_error) as raised:
             run_publish()
         if publish_fails and publish_mode != "bulk":
             assert raised.value.errors == [(item.name, publish_error)]
+        elif publish_fails and resume_fails:
+            assert raised.value.operation_error is publish_error
+            assert raised.value.__cause__ is publish_error
         else:
             assert raised.value is (publish_error if publish_fails else resume_error)
+        if publish_fails and resume_fails:
+            assert raised.value.cleanup_errors == [(ItemType.EVENTSTREAM.value, resume_error)]
+            assert "Resume failed" in str(raised.value)
 
     expected_events = ["pre", "topology:Running", "pause", "topology:Paused", "publish", "resume"]
     if outcome == "success" or (publish_fails and publish_mode != "bulk"):

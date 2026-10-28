@@ -32,6 +32,7 @@ class _StubPublisher(ItemPublisher):
     def __init__(self, failing_items: list[str], hook_error: Optional[Exception]) -> None:
         workspace = MagicMock(spec=FabricWorkspace)
         workspace.repository_items = {}
+        workspace._apply_publish_filters.return_value = False
         super().__init__(workspace)
         self.failing_items = failing_items
         self.hook_error = hook_error
@@ -64,9 +65,12 @@ def shortcut_publish_enabled():
     constants.FEATURE_FLAG.update(original_flags)
 
 
-def test_publish_error_names_post_publish_failure_when_both_fail():
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_publish_error_names_post_publish_failure_when_both_fail(cleanup_fails, mocker, caplog):
     hook_error = _post_publish_failure()
     publisher = _StubPublisher(["LakehouseA"], hook_error)
+    if cleanup_fails:
+        mocker.patch.object(publisher, "cleanup", side_effect=RuntimeError("cleanup failed"))
 
     with pytest.raises(PublishError) as exc_info:
         publisher.publish_all()
@@ -75,9 +79,18 @@ def test_publish_error_names_post_publish_failure_when_both_fail():
     assert error.errors == [("LakehouseA", publisher.publish_failures["LakehouseA"])]
     assert error.post_publish_error is hook_error
     assert error.__cause__ is hook_error
+    cleanup_message = ". Cleanup also failed: Lakehouse: cleanup failed" if cleanup_fails else ""
     assert str(error) == (
-        f"Failed to publish 1 item(s): ['LakehouseA']. The post-publish step also failed: {POST_PUBLISH_MESSAGE}"
+        f"Failed to publish 1 item(s): ['LakehouseA']{cleanup_message}. "
+        f"The post-publish step also failed: {POST_PUBLISH_MESSAGE}"
     )
+    if cleanup_fails:
+        assert len(error.cleanup_errors) == 1
+        assert error.cleanup_errors[0][0] == "Lakehouse"
+        assert str(error.cleanup_errors[0][1]) == "cleanup failed"
+        assert "Failed to clean up after item publishing" in caplog.text
+    else:
+        assert error.cleanup_errors == []
 
 
 def test_publish_error_keeps_additional_info_of_post_publish_failure():
@@ -151,6 +164,7 @@ def test_lakehouse_publish_error_names_failed_shortcut(shortcut_publish_enabled)
     workspace = MagicMock(spec=FabricWorkspace)
     workspace.repository_items = {"Lakehouse": {"LakehouseA": lakehouse_a, "LakehouseB": lakehouse_b}}
     workspace.items_to_include = None
+    workspace._apply_publish_filters.return_value = False
     publisher = LakehousePublisher(workspace)
 
     publish_failure = RuntimeError("definition rejected")
@@ -176,3 +190,161 @@ def test_lakehouse_publish_error_names_failed_shortcut(shortcut_publish_enabled)
     assert str(error) == (
         f"Failed to publish 1 item(s): ['LakehouseA']. The post-publish step also failed: {POST_PUBLISH_MESSAGE}"
     )
+
+
+@pytest.mark.parametrize("publish_mode", ["parallel", "sequential", "ordered"])
+@pytest.mark.parametrize("publish_fails", [False, True])
+@pytest.mark.parametrize("post_publish_fails", [False, True])
+def test_cleanup_failure_is_reported_without_changing_post_publish_behavior(
+    publish_mode, publish_fails, post_publish_fails, mocker
+):
+    publisher = _StubPublisher(["LakehouseA"] if publish_fails else [], None)
+    mocker.patch.object(
+        _StubPublisher,
+        "parallel_config",
+        ParallelConfig(
+            enabled=publish_mode == "parallel",
+            ordered_items_func=(lambda _publisher: ["LakehouseA", "LakehouseB"]) if publish_mode == "ordered" else None,
+        ),
+    )
+    request_log = "URL: https://api.fabric.microsoft.com/resume\nStatus: 403"
+    cleanup_error = InvokeError("Resume forbidden", logger, request_log)
+    mocker.patch.object(publisher, "cleanup", side_effect=cleanup_error)
+    post_error = _post_publish_failure()
+    post_publish = mocker.patch.object(
+        publisher, "post_publish_all", side_effect=post_error if post_publish_fails else None
+    )
+
+    with pytest.raises(PublishError if publish_fails else InvokeError) as raised:
+        publisher.publish_all()
+
+    if not publish_fails:
+        assert raised.value is cleanup_error
+        post_publish.assert_not_called()
+        return
+
+    error = raised.value
+    assert error.errors == [("LakehouseA", publisher.publish_failures["LakehouseA"])]
+    assert error.cleanup_errors == [("Lakehouse", cleanup_error)]
+    assert error.operation_error is None
+    assert error.post_publish_error is (post_error if post_publish_fails else None)
+    assert "Cleanup also failed: Lakehouse: Resume forbidden" in str(error)
+    assert f"\n--- cleanup (Lakehouse) ---\nResume forbidden\n{request_log}" in error.additional_info
+    if post_publish_fails:
+        assert error.__cause__ is post_error
+    else:
+        assert isinstance(error.__cause__, PublishError)
+        assert error.__cause__.errors == error.errors
+    post_publish.assert_called_once_with()
+
+
+@pytest.mark.parametrize("error_type", [RuntimeError, KeyboardInterrupt])
+def test_setup_and_cleanup_failures_preserve_the_setup_error(error_type, mocker):
+    publisher = _StubPublisher([], None)
+    setup_error = error_type("Setup failed")
+    cleanup_error = RuntimeError("Cleanup failed")
+    mocker.patch.object(publisher, "setup", side_effect=setup_error)
+    cleanup = mocker.patch.object(publisher, "cleanup", side_effect=cleanup_error)
+    post_publish = mocker.patch.object(publisher, "post_publish_all")
+
+    with pytest.raises(PublishError if error_type is RuntimeError else KeyboardInterrupt) as raised:
+        publisher.publish_all()
+
+    if error_type is KeyboardInterrupt:
+        assert raised.value is setup_error
+    else:
+        assert raised.value.operation_error is setup_error
+        assert raised.value.__cause__ is setup_error
+        assert raised.value.cleanup_errors == [("Lakehouse", cleanup_error)]
+        assert (
+            str(raised.value)
+            == "Publish operation failed: Setup failed. Cleanup also failed: Lakehouse: Cleanup failed"
+        )
+    cleanup.assert_called_once()
+    post_publish.assert_not_called()
+
+
+@pytest.mark.parametrize("operation_fails", [False, True])
+@pytest.mark.parametrize("item_errors", [False, True])
+def test_batch_lifecycle_reports_every_cleanup_failure(operation_fails, item_errors, mocker):
+    first = _StubPublisher([], None)
+    second = _StubPublisher([], None)
+    second.item_type = "Eventstream"
+    first_cleanup_error = RuntimeError("First cleanup failed")
+    second_cleanup_error = RuntimeError("Second cleanup failed")
+    events = []
+
+    def fail_cleanup(publisher_name, error):
+        events.append(publisher_name)
+        raise error
+
+    mocker.patch.object(first, "cleanup", side_effect=lambda _items: fail_cleanup("first", first_cleanup_error))
+    mocker.patch.object(second, "cleanup", side_effect=lambda _items: fail_cleanup("second", second_cleanup_error))
+    item_failure = RuntimeError("Definition rejected")
+    operation_error = PublishError([("LakehouseA", item_failure)], logger) if item_errors else item_failure
+    batch = [("LakehouseA", MagicMock(), first), ("Stream", MagicMock(), second)]
+
+    def publish_batch():
+        with ItemPublisher._batch_publish_lifecycle(batch):
+            if operation_fails:
+                raise operation_error
+
+    with pytest.raises(PublishError) as raised:
+        publish_batch()
+
+    error = raised.value
+    assert events == ["second", "first"]
+    expected_cleanups = [("Eventstream", second_cleanup_error), ("Lakehouse", first_cleanup_error)]
+    if not operation_fails:
+        assert error.operation_error is second_cleanup_error
+        expected_cleanups = [("Lakehouse", first_cleanup_error)]
+    elif item_errors:
+        assert error.errors == operation_error.errors
+        assert error.operation_error is None
+    else:
+        assert error.operation_error is operation_error
+    assert error.cleanup_errors == expected_cleanups
+    assert error.__cause__ is (operation_error if operation_fails else second_cleanup_error)
+    assert "First cleanup failed" in str(error)
+    assert "Second cleanup failed" in str(error)
+
+
+def test_cleanup_aggregation_preserves_existing_error_details():
+    operation_error = InvokeError("Bulk import forbidden", logger, "Bulk request log")
+    post_error = InvokeError("Binding forbidden", logger, "Binding request log")
+    first_cleanup = RuntimeError("First cleanup failed")
+    second_cleanup = RuntimeError("Second cleanup failed")
+    original = PublishError(
+        [],
+        logger,
+        post_error,
+        cleanup_errors=[("Lakehouse", first_cleanup)],
+        operation_error=operation_error,
+    )
+    additional_cleanups = [("Eventstream", second_cleanup)]
+
+    combined = PublishError.from_operation_error(original, additional_cleanups, logger)
+    additional_cleanups.clear()
+
+    assert combined.operation_error is operation_error
+    assert combined.post_publish_error is post_error
+    assert combined.cleanup_errors == [("Lakehouse", first_cleanup), ("Eventstream", second_cleanup)]
+    assert original.cleanup_errors == [("Lakehouse", first_cleanup)]
+    assert "Bulk request log" in combined.additional_info
+    assert "Binding request log" in combined.additional_info
+    assert "First cleanup failed" in combined.additional_info
+    assert "Second cleanup failed" in combined.additional_info
+
+
+def test_cleanup_errors_do_not_leak_between_publish_operations(mocker):
+    publisher = _StubPublisher(["LakehouseA"], None)
+    cleanup_error = RuntimeError("Cleanup failed")
+    mocker.patch.object(publisher, "cleanup", side_effect=[cleanup_error, None])
+
+    with pytest.raises(PublishError) as first:
+        publisher.publish_all()
+    with pytest.raises(PublishError) as second:
+        publisher.publish_all()
+
+    assert first.value.cleanup_errors == [("Lakehouse", cleanup_error)]
+    assert second.value.cleanup_errors == []
