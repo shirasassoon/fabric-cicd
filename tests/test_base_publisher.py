@@ -11,7 +11,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from fabric_cicd import constants
-from fabric_cicd._common._exceptions import CleanupError, FailedPublishedItemStatusError, InvokeError, PublishError
+from fabric_cicd._common._exceptions import FailedPublishedItemStatusError, InvokeError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher, ParallelConfig
 from fabric_cicd._items._lakehouse import LakehousePublisher
@@ -79,18 +79,11 @@ def test_publish_error_names_post_publish_failure_when_both_fail(cleanup_fails, 
     assert error.errors == [("LakehouseA", publisher.publish_failures["LakehouseA"])]
     assert error.post_publish_error is hook_error
     assert error.__cause__ is hook_error
-    cleanup_message = ". Cleanup also failed: Lakehouse: cleanup failed" if cleanup_fails else ""
     assert str(error) == (
-        f"Failed to publish 1 item(s): ['LakehouseA']{cleanup_message}. "
-        f"The post-publish step also failed: {POST_PUBLISH_MESSAGE}"
+        f"Failed to publish 1 item(s): ['LakehouseA']. The post-publish step also failed: {POST_PUBLISH_MESSAGE}"
     )
     if cleanup_fails:
-        assert len(error.cleanup_errors) == 1
-        assert error.cleanup_errors[0][0] == "Lakehouse"
-        assert str(error.cleanup_errors[0][1]) == "cleanup failed"
         assert "Failed to clean up after item publishing" in caplog.text
-    else:
-        assert error.cleanup_errors == []
 
 
 def test_publish_error_keeps_additional_info_of_post_publish_failure():
@@ -196,7 +189,7 @@ def test_lakehouse_publish_error_names_failed_shortcut(shortcut_publish_enabled)
 @pytest.mark.parametrize("publish_fails", [False, True])
 @pytest.mark.parametrize("post_publish_fails", [False, True])
 def test_cleanup_failure_is_reported_without_changing_post_publish_behavior(
-    publish_mode, publish_fails, post_publish_fails, mocker
+    publish_mode, publish_fails, post_publish_fails, mocker, caplog
 ):
     publisher = _StubPublisher(["LakehouseA"] if publish_fails else [], None)
     mocker.patch.object(
@@ -225,16 +218,13 @@ def test_cleanup_failure_is_reported_without_changing_post_publish_behavior(
 
     error = raised.value
     assert error.errors == [("LakehouseA", publisher.publish_failures["LakehouseA"])]
-    assert error.cleanup_errors == [("Lakehouse", cleanup_error)]
-    assert error.operation_error is None
     assert error.post_publish_error is (post_error if post_publish_fails else None)
-    assert "Cleanup also failed: Lakehouse: Resume forbidden" in str(error)
-    assert f"\n--- cleanup (Lakehouse) ---\nResume forbidden\n{request_log}" in error.additional_info
+    assert "Resume forbidden" in caplog.text
+    assert request_log not in error.additional_info
     if post_publish_fails:
         assert error.__cause__ is post_error
     else:
-        assert isinstance(error.__cause__, PublishError)
-        assert error.__cause__.errors == error.errors
+        assert error.__cause__ is None
     post_publish.assert_called_once_with()
 
 
@@ -247,26 +237,17 @@ def test_setup_and_cleanup_failures_preserve_the_setup_error(error_type, mocker)
     cleanup = mocker.patch.object(publisher, "cleanup", side_effect=cleanup_error)
     post_publish = mocker.patch.object(publisher, "post_publish_all")
 
-    with pytest.raises(PublishError if error_type is RuntimeError else KeyboardInterrupt) as raised:
+    with pytest.raises(error_type) as raised:
         publisher.publish_all()
 
-    if error_type is KeyboardInterrupt:
-        assert raised.value is setup_error
-    else:
-        assert raised.value.operation_error is setup_error
-        assert raised.value.__cause__ is setup_error
-        assert raised.value.cleanup_errors == [("Lakehouse", cleanup_error)]
-        assert (
-            str(raised.value)
-            == "Publish operation failed: Setup failed. Cleanup also failed: Lakehouse: Cleanup failed"
-        )
+    assert raised.value is setup_error
     cleanup.assert_called_once()
     post_publish.assert_not_called()
 
 
 @pytest.mark.parametrize("operation_fails", [False, True])
 @pytest.mark.parametrize("item_errors", [False, True])
-def test_batch_lifecycle_reports_every_cleanup_failure(operation_fails, item_errors, mocker):
+def test_batch_lifecycle_preserves_primary_error_and_attempts_all_cleanup(operation_fails, item_errors, mocker, caplog):
     first = _StubPublisher([], None)
     second = _StubPublisher([], None)
     second.item_type = "Eventstream"
@@ -289,137 +270,15 @@ def test_batch_lifecycle_reports_every_cleanup_failure(operation_fails, item_err
             if operation_fails:
                 raise operation_error
 
-    with pytest.raises(PublishError) as raised:
+    expected_error = PublishError if operation_fails and item_errors else RuntimeError
+    with pytest.raises(expected_error) as raised:
         publish_batch()
 
-    error = raised.value
     assert events == ["second", "first"]
-    expected_cleanups = [("Eventstream", second_cleanup_error), ("Lakehouse", first_cleanup_error)]
-    if not operation_fails:
-        assert error.operation_error is None
-        assert error.errors == []
-        assert str(error).startswith("Publishing succeeded, but cleanup failed:")
-    elif item_errors:
-        assert error.errors == operation_error.errors
-        assert error.operation_error is None
-    else:
-        assert error.operation_error is operation_error
-    assert error.cleanup_errors == expected_cleanups
-    assert error.__cause__ is (operation_error if operation_fails else second_cleanup_error)
-    assert "First cleanup failed" in str(error)
-    assert "Second cleanup failed" in str(error)
-
-
-def test_cleanup_aggregation_preserves_existing_error_details():
-    operation_error = InvokeError("Bulk import forbidden", logger, "Bulk request log")
-    post_error = InvokeError("Binding forbidden", logger, "Binding request log")
-    first_cleanup = RuntimeError("First cleanup failed")
-    second_cleanup = RuntimeError("Second cleanup failed")
-    original = PublishError(
-        [],
-        logger,
-        post_error,
-        cleanup_errors=[("Lakehouse", first_cleanup)],
-        operation_error=operation_error,
-    )
-    additional_cleanups = [("Eventstream", second_cleanup)]
-
-    combined = PublishError.from_operation_error(original, additional_cleanups, logger)
-    additional_cleanups.clear()
-
-    assert combined.operation_error is operation_error
-    assert combined.post_publish_error is post_error
-    assert combined.cleanup_errors == [("Lakehouse", first_cleanup), ("Eventstream", second_cleanup)]
-    assert original.cleanup_errors == [("Lakehouse", first_cleanup)]
-    assert "Bulk request log" in combined.additional_info
-    assert "Binding request log" in combined.additional_info
-    assert "First cleanup failed" in combined.additional_info
-    assert "Second cleanup failed" in combined.additional_info
-
-
-@pytest.mark.parametrize("operation_info", [None, "", "Operation request\nStatus: 403"])
-@pytest.mark.parametrize("cleanup_info", [None, "", "Cleanup request\nStatus: 409"])
-def test_publish_error_preserves_diagnostic_formatting(operation_info, cleanup_info):
-    item_error = InvokeError("Definition rejected", logger, "Item request log")
-    operation_error = InvokeError("Bulk import failed", logger, operation_info)
-    cleanup_error = InvokeError("Resume failed", logger, cleanup_info)
-    post_error = InvokeError("Binding failed", logger, "Post-publish request")
-
-    error = PublishError(
-        [("LakehouseA", item_error)],
-        logger,
-        post_error,
-        cleanup_errors=[("Eventstream", cleanup_error)],
-        operation_error=operation_error,
-    )
-
-    expected_operation_info = f"\n{operation_info}" if operation_info else ""
-    expected_cleanup_info = f"\n{cleanup_info}" if cleanup_info else ""
-    assert error.additional_info == (
-        "\n--- LakehouseA ---\nDefinition rejected"
-        "\n\n--- publish operation ---\nBulk import failed"
-        f"{expected_operation_info}"
-        "\n\n--- cleanup (Eventstream) ---\nResume failed"
-        f"{expected_cleanup_info}"
-        "\n\n--- post_publish_all ---\nPost-publish request"
-    )
-
-
-@pytest.mark.parametrize("request_info", [None, "", "Resume request\nStatus: 403"])
-def test_cleanup_error_preserves_diagnostic_formatting(request_info):
-    error = CleanupError(
-        [
-            ("SourceOne", InvokeError("Resume failed", logger, request_info)),
-            ("SourceTwo", RuntimeError("Resume timed out")),
-        ],
-        logger,
-    )
-
-    expected_request_info = f"\n{request_info}" if request_info else ""
-    assert str(error) == "Cleanup failed: SourceOne: Resume failed; SourceTwo: Resume timed out"
-    assert error.additional_info == (
-        f"\n--- SourceOne ---\nResume failed{expected_request_info}\n\n--- SourceTwo ---\nResume timed out"
-    )
-
-
-@pytest.mark.parametrize(
-    ("failure_kind", "expected_message"),
-    [
-        ("items", "Failed to publish 1 item(s): ['LakehouseA']. Cleanup also failed: Eventstream: Resume failed"),
-        ("operation", "Publish operation failed: Bulk import failed. Cleanup also failed: Eventstream: Resume failed"),
-        ("cleanup", "Publishing succeeded, but cleanup failed: Eventstream: Resume failed"),
-        ("empty", "Failed to publish 0 item(s): []"),
-    ],
-)
-@pytest.mark.parametrize("post_publish_fails", [False, True])
-def test_publish_error_preserves_message_formatting(failure_kind, expected_message, post_publish_fails):
-    error = PublishError(
-        [("LakehouseA", RuntimeError("Definition rejected"))] if failure_kind == "items" else [],
-        logger,
-        RuntimeError("Binding failed") if post_publish_fails else None,
-        cleanup_errors=[("Eventstream", RuntimeError("Resume failed"))] if failure_kind != "empty" else None,
-        operation_error=RuntimeError("Bulk import failed") if failure_kind == "operation" else None,
-    )
-
-    if post_publish_fails:
-        expected_message += ". The post-publish step also failed: Binding failed"
-    assert str(error) == expected_message
-    if failure_kind == "empty":
-        assert error.additional_info is None
-
-
-def test_cleanup_errors_do_not_leak_between_publish_operations(mocker):
-    publisher = _StubPublisher(["LakehouseA"], None)
-    cleanup_error = RuntimeError("Cleanup failed")
-    mocker.patch.object(publisher, "cleanup", side_effect=[cleanup_error, None])
-
-    with pytest.raises(PublishError) as first:
-        publisher.publish_all()
-    with pytest.raises(PublishError) as second:
-        publisher.publish_all()
-
-    assert first.value.cleanup_errors == [("Lakehouse", cleanup_error)]
-    assert second.value.cleanup_errors == []
+    assert raised.value is (operation_error if operation_fails else second_cleanup_error)
+    assert "First cleanup failed" in caplog.text
+    if operation_fails:
+        assert "Second cleanup failed" in caplog.text
 
 
 @pytest.mark.parametrize("failing_publisher", ["first", "second"])
@@ -449,7 +308,7 @@ def test_single_batch_cleanup_failure_is_unchanged(failing_publisher, mocker):
     assert events == ["publish", "second", "first"]
 
 
-def test_batch_setup_failure_retains_all_cleanup_failures(mocker):
+def test_batch_setup_failure_survives_cleanup_failures(mocker, caplog):
     first = _StubPublisher([], None)
     second = _StubPublisher([], None)
     second.item_type = "Eventstream"
@@ -466,12 +325,12 @@ def test_batch_setup_failure_retains_all_cleanup_failures(mocker):
         with ItemPublisher._batch_publish_lifecycle(batch):
             publish()
 
-    with pytest.raises(PublishError) as raised:
+    with pytest.raises(RuntimeError) as raised:
         publish_batch()
 
-    assert raised.value.operation_error is setup_error
-    assert raised.value.__cause__ is setup_error
-    assert raised.value.cleanup_errors == [("Eventstream", second_cleanup_error), ("Lakehouse", first_cleanup_error)]
+    assert raised.value is setup_error
+    assert "First cleanup failed" in caplog.text
+    assert "Second cleanup failed" in caplog.text
     first_cleanup.assert_called_once()
     second_cleanup.assert_called_once()
     publish.assert_not_called()
