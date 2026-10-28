@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from fabric_cicd import FabricWorkspace, constants, get_supported_feature_flags
-from fabric_cicd._common._exceptions import InvokeError, PublishError
+from fabric_cicd._common._exceptions import BaseCustomError, EventstreamSourceResumeError, InvokeError, PublishError
 from fabric_cicd._common._item import Item
 from fabric_cicd._items._base_publisher import ItemPublisher, ParallelConfig
 from fabric_cicd._items._eventstream import EventstreamPublisher
@@ -331,7 +331,7 @@ def test_flag_on_publish_fails_sources_are_still_resumed():
 
 @pytest.mark.parametrize("publish_fails", [False, True])
 @pytest.mark.parametrize("source_count", [1, 2])
-def test_resume_failures_are_logged_without_masking_publish_error(publish_fails, source_count, caplog):
+def test_resume_failures_are_reported_without_masking_publish_error(publish_fails, source_count, caplog):
     """All resumes are attempted; cleanup failures only propagate without a publish error."""
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     publisher, workspace = _make_publisher(
@@ -357,7 +357,7 @@ def test_resume_failures_are_logged_without_masking_publish_error(publish_fails,
         if publish_fails:
             raise publish_error
 
-    expected_error = RuntimeError if publish_fails else InvokeError
+    expected_error = RuntimeError if publish_fails else EventstreamSourceResumeError
     with pytest.raises(expected_error) as raised, publisher.publish_lifecycle([_make_item()]):
         publish()
 
@@ -371,26 +371,24 @@ def test_resume_failures_are_logged_without_masking_publish_error(publish_fails,
         f"{workspace.base_api_url}/eventstreams/{EVENTSTREAM_GUID}/sources/{source_id}/resume"
         for source_id in ("source-1", "source-2")[:source_count]
     ]
-    assert raised.value is (publish_error if publish_fails else resume_errors[0])
-    assert "source-1" in caplog.text
-    if source_count == 2:
-        assert "source-2" in caplog.text
-    assert "Resume failed" in caplog.text
-    traceback_errors = [
-        record.exc_info[1]
-        for record in caplog.records
-        if record.exc_info and any(record.exc_info[1] is error for error in resume_errors)
-    ]
-    assert traceback_errors == resume_errors
-    assert all(
-        EVENTSTREAM_GUID in record.getMessage() and f"source-{index}" in record.getMessage()
-        for index, record in enumerate((record for record in caplog.records if record.exc_info), start=1)
-    )
+    if publish_fails:
+        assert raised.value is publish_error
+        error_text = caplog.text
+    else:
+        assert raised.value.errors == [
+            (EVENTSTREAM_GUID, f"source-{index}", error) for index, error in enumerate(resume_errors, start=1)
+        ]
+        assert raised.value.__cause__ is resume_errors[0]
+        error_text = str(raised.value)
+    for index in range(1, source_count + 1):
+        assert f"source-{index}" in error_text
+    assert EVENTSTREAM_GUID in error_text
+    assert "Resume failed" in error_text
 
 
 @pytest.mark.parametrize("publish_mode", ["standard", "bulk"])
 @pytest.mark.parametrize("publish_fails", [False, True])
-def test_multiple_resume_failures_are_logged_without_masking_original_error(
+def test_multiple_resume_failures_are_reported_without_masking_original_error(
     publish_mode, publish_fails, orchestration_publisher, mocker, caplog
 ):
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
@@ -431,7 +429,7 @@ def test_multiple_resume_failures_are_logged_without_masking_original_error(
         else:
             publisher.publish_all()
 
-    expected_error = InvokeError
+    expected_error = EventstreamSourceResumeError
     if publish_fails:
         expected_error = PublishError if publish_mode == "standard" else RuntimeError
     with pytest.raises(expected_error) as raised:
@@ -446,39 +444,46 @@ def test_multiple_resume_failures_are_logged_without_masking_original_error(
             assert error.post_publish_error is post_error
             assert error.__cause__ is post_error
     else:
-        assert raised.value is resume_errors["source-1"]
-        assert raised.value.additional_info == "Request log: source-1"
+        assert raised.value.errors == [
+            (EVENTSTREAM_GUID, source_id, error) for source_id, error in resume_errors.items()
+        ]
+        for source_id in resume_errors:
+            assert f"Request log: {source_id}" in raised.value.additional_info
 
+    error_text = caplog.text if publish_fails else str(raised.value)
     for source_id in resume_errors:
-        assert f"Eventstream source '{source_id}' in Eventstream '{EVENTSTREAM_GUID}'" in caplog.text
-    traceback_errors = [
-        record.exc_info[1]
-        for record in caplog.records
-        if record.exc_info and any(record.exc_info[1] is error for error in resume_errors.values())
-    ]
-    assert traceback_errors == list(resume_errors.values())
+        assert f"Eventstream source '{source_id}' in Eventstream '{EVENTSTREAM_GUID}'" in error_text
     if publish_fails and publish_mode == "standard":
         post_publish.assert_called_once_with()
     else:
         post_publish.assert_not_called()
 
 
-def test_eventstream_cleanup_logs_each_resume_failure(mocker, caplog):
+def test_eventstream_cleanup_collects_each_resume_failure(mocker):
     publisher, workspace = _make_publisher()
     sources = [{"id": "source-1"}, {"id": "source-2"}, {"id": "source-3"}]
     publisher._paused_sources = [(EVENTSTREAM_GUID, source) for source in sources]
     errors = [RuntimeError("First resume failed"), RuntimeError("Last resume failed")]
     resume = mocker.patch("fabric_cicd._items._eventstream._resume_source", side_effect=[errors[0], None, errors[1]])
 
-    with pytest.raises(RuntimeError) as raised:
+    with pytest.raises(EventstreamSourceResumeError) as raised:
         publisher.cleanup([_make_item()])
 
     assert resume.call_args_list == [mocker.call(workspace, EVENTSTREAM_GUID, source) for source in sources]
-    assert raised.value is errors[0]
+    assert isinstance(raised.value, BaseCustomError)
+    assert raised.value.logger.name == "fabric_cicd._items._eventstream"
+    assert raised.value.errors == [
+        (EVENTSTREAM_GUID, "source-1", errors[0]),
+        (EVENTSTREAM_GUID, "source-3", errors[1]),
+    ]
+    assert raised.value.__cause__ is errors[0]
     assert publisher._paused_sources == []
-    assert [record.exc_info[1] for record in caplog.records if record.exc_info] == errors
-    assert "source-1" in caplog.text
-    assert "source-3" in caplog.text
+    assert "2 Eventstream source(s)" in str(raised.value)
+    assert "source-1" in str(raised.value)
+    assert "source-3" in str(raised.value)
+    for error in errors:
+        assert f"RuntimeError: {error}" in raised.value.additional_info
+    assert "Traceback" in raised.value.additional_info
 
 
 def test_standard_publish_failure_survives_resume_failure(mocker, caplog):
@@ -567,10 +572,11 @@ def test_resume_does_not_retry_api_failures(error_message, mocker):
         return invoke(method, url, **kwargs)
 
     workspace.endpoint.invoke.side_effect = fail_resume
-    with pytest.raises(InvokeError) as raised, publisher.publish_lifecycle([_make_item()]):
+    with pytest.raises(EventstreamSourceResumeError) as raised, publisher.publish_lifecycle([_make_item()]):
         pass
 
-    assert raised.value is error
+    assert raised.value.errors == [(EVENTSTREAM_GUID, SOURCE_ID, error)]
+    assert raised.value.__cause__ is error
     resume_calls = [call for call in workspace.endpoint.invoke.call_args_list if call.kwargs["url"].endswith("/resume")]
     assert len(resume_calls) == 1
     retry.assert_not_called()
@@ -730,20 +736,24 @@ def test_publish_orchestration_orders_pause_publish_and_resume(
         expected_error = (
             PublishError
             if publish_fails and publish_mode != "bulk"
-            else type(publish_error if publish_fails else resume_error)
+            else RuntimeError
+            if publish_fails
+            else EventstreamSourceResumeError
         )
         with pytest.raises(expected_error) as raised:
             run_publish()
         if publish_fails and publish_mode != "bulk":
             assert raised.value.errors == [(item.name, publish_error)]
+        elif publish_fails:
+            assert raised.value is publish_error
         else:
-            assert raised.value is (publish_error if publish_fails else resume_error)
+            assert raised.value.errors == [(EVENTSTREAM_GUID, SOURCE_ID, resume_error)]
 
     expected_events = ["pre", "topology:Running", "pause", "topology:Paused", "publish", "resume"]
     if outcome == "success" or (publish_fails and publish_mode != "bulk"):
         expected_events.append("post")
     assert events == expected_events
-    if resume_fails:
+    if resume_fails and publish_fails:
         assert "Resume failed" in caplog.text
 
 
@@ -847,14 +857,17 @@ def test_publish_lifecycle_preserves_errors(failure_stage, cleanup_fails, caplog
                 raise operation_error
 
     if failure_stage is not None or cleanup_fails:
-        with pytest.raises(RuntimeError) as raised:
+        with pytest.raises(RuntimeError if failure_stage is not None else EventstreamSourceResumeError) as raised:
             run_publish()
-        assert raised.value is (operation_error if failure_stage is not None else cleanup_error)
+        if failure_stage is not None:
+            assert raised.value is operation_error
+        else:
+            assert raised.value.errors == [(EVENTSTREAM_GUID, SOURCE_ID, cleanup_error)]
     else:
         run_publish()
 
     assert events == (["setup", "cleanup"] if failure_stage == "setup" else ["setup", "publish", "cleanup"])
-    if cleanup_fails:
+    if cleanup_fails and failure_stage is not None:
         assert "Cleanup failed" in caplog.text
 
 
@@ -867,7 +880,7 @@ def test_base_publish_lifecycle_is_noop():
 
 
 @pytest.mark.parametrize("chain_kind", ["explicit", "implicit", "suppressed", "none"])
-def test_single_cleanup_failure_preserves_exception_chain(chain_kind, mocker, caplog):
+def test_single_cleanup_failure_preserves_exception_chain(chain_kind, mocker):
     constants.FEATURE_FLAG.add(FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value)
     publisher, _ = _make_publisher(
         topology_sources=[{"id": SOURCE_ID, "name": "MySource", "status": "Running"}],
@@ -886,18 +899,18 @@ def test_single_cleanup_failure_preserves_exception_chain(chain_kind, mocker, ca
         with publisher.publish_lifecycle([_make_item()]):
             pass
 
-    with pytest.raises(InvokeError) as raised:
+    with pytest.raises(EventstreamSourceResumeError) as raised:
         run_publish()
 
     error = raised.value
-    assert error is cleanup_error
-    assert error.__cause__ is expected_cause
-    assert error.__context__ is expected_context
-    assert error.__suppress_context__ is expected_suppression
-    assert error.additional_info == "Resume request details"
+    assert error.__cause__ is cleanup_error
+    assert cleanup_error.__cause__ is expected_cause
+    assert cleanup_error.__context__ is expected_context
+    assert cleanup_error.__suppress_context__ is expected_suppression
+    assert "Resume request details" in error.additional_info
     formatted_traceback = "".join(traceback.format_exception(type(error), error, error.__traceback__))
     assert ("Underlying connection failed" in formatted_traceback) == (chain_kind in {"explicit", "implicit"})
-    assert sum(1 for record in caplog.records if record.exc_info and record.exc_info[1] is cleanup_error) == 1
+    assert ("Underlying connection failed" in error.additional_info) == (chain_kind in {"explicit", "implicit"})
 
 
 @pytest.mark.parametrize("failure_stage", [None, "setup", "publish"])
@@ -959,7 +972,10 @@ def test_eventstream_lifecycle_clears_state_between_operations(cleanup_fails, mo
     )
 
     if cleanup_fails:
-        with pytest.raises(RuntimeError, match="Resume failed"), publisher.publish_lifecycle([_make_item()]):
+        with (
+            pytest.raises(EventstreamSourceResumeError, match="Resume failed"),
+            publisher.publish_lifecycle([_make_item()]),
+        ):
             pass
     else:
         with publisher.publish_lifecycle([_make_item()]):

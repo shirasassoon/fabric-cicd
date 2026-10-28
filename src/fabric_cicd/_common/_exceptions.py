@@ -4,6 +4,7 @@
 """Custom exceptions for the fabric-cicd package."""
 
 from logging import Logger
+from traceback import format_exception
 from typing import Optional
 
 
@@ -52,6 +53,24 @@ class ParameterFileError(BaseCustomError):
 
 class FailedPublishedItemStatusError(BaseCustomError):
     pass
+
+
+class EventstreamSourceResumeError(BaseCustomError):
+    """Raised after attempting all sources when one or more fail to resume."""
+
+    def __init__(self, errors: list[tuple[str, str, Exception]], logger: Logger) -> None:
+        self.errors = errors
+        failures = []
+        details = []
+        for eventstream_id, source_id, error in errors:
+            label = f"Eventstream source '{source_id}' in Eventstream '{eventstream_id}'"
+            failures.append(f"{label}: {error}")
+            details.append(f"--- {label} ---\n{''.join(format_exception(type(error), error, error.__traceback__))}")
+            additional_info = getattr(error, "additional_info", None)
+            if additional_info:
+                details.append(additional_info)
+        message = f"Failed to resume {len(errors)} Eventstream source(s):\n" + "\n".join(failures)
+        super().__init__(message, logger, "\n".join(details))
 
 
 class PublishError(BaseCustomError):
