@@ -484,15 +484,13 @@ class ItemPublisher(Publisher):
                     raise PublishError(errors, logger)
         except PublishError as publish_error:
             try:
+                # Attempt to run post-publish hooks even if publishing failed
                 self.post_publish_all()
             except Exception as post_error:
-                raise PublishError(
-                    publish_error.errors,
-                    logger,
-                    post_publish_error=post_error,
-                ) from post_error
+                raise PublishError(publish_error.errors, logger, post_publish_error=post_error) from post_error
             raise
 
+        # Run post-publish hooks after successful publishing
         self.post_publish_all()
 
     def publish_one(self, item_name: str, _item: "Item") -> None:
@@ -579,7 +577,8 @@ class ItemPublisher(Publisher):
 
     def post_publish_all(self) -> None:
         """
-        Hook called after publishing items, even when individual items failed.
+        Hook called after publishing completes or raises PublishError,
+        including when no items are selected.
 
         Subclasses can override to perform cleanup, binding, or finalization.
         Default implementation does nothing.
@@ -587,39 +586,37 @@ class ItemPublisher(Publisher):
         pass
 
     def setup(self, items: list["Item"]) -> None:  # noqa: ARG002
-        """Prepare one publish operation or bulk batch. The default is a no-op."""
+        """
+        Hook for running setup actions before a publish operation or bulk batch.
+        The default is a no-op.
+        """
         pass
 
     def cleanup(self, items: list["Item"]) -> None:  # noqa: ARG002
         """
-        Clean up one publish operation or bulk batch, even after partial setup failure.
+        Hook for running cleanup actions after a publish operation or
+        bulk batch, even after partial setup failure. The default is a no-op.
 
-        Subclasses should attempt all cleanup actions and log resource-specific failures
-        before raising an error.
-        The default is a no-op.
+        If a cleanup action fails, log what failed and continue attempting the
+        remaining actions. Raise an error after all cleanup actions have been attempted.
         """
         pass
 
     @contextmanager
     def publish_lifecycle(self, items: list["Item"]) -> Generator[None, None, None]:
         """
-        Run item-type setup and cleanup around publishing (pre/post-publish hooks are separate).
+        Run setup before publishing the supplied items and cleanup afterward,
+        even if setup or publishing fails. Pre/post-publish hooks run separately.
 
-        Standard publishing: call setup() once before publishing all selected items of
-        this type, then cleanup() once afterward, even when items publish in parallel.
-        Bulk publishing: for each batch, call setup() on each publisher whose type is in
-        the batch, passing only its items. Publish the batch, then call cleanup() in
-        reverse setup order. Repeat for each batch; types absent from a batch are skipped.
+        Subclasses should override setup() and/or cleanup(), not this method.
+        Cleanup errors propagate only if setup and publishing succeeded; otherwise,
+        they are logged without replacing the original error.
 
-        Subclasses override the no-op setup() and/or cleanup() hooks, not this method.
-        Cleanup runs even after partial setup failure. Its errors propagate only if setup
-        and publishing succeeded; otherwise a summary is logged without replacing the
-        original failure. Resource-specific cleanup logging belongs to the publisher.
-        Calls on the same publisher must not overlap. Hooks sharing instance state must
-        reset it per operation, since a publisher may be reused across bulk batches.
+        Calls on the same publisher must not overlap. Hooks that store instance state must
+        reset it for each operation, since bulk publishing may reuse the same publisher across multiple batches.
 
         Args:
-            items: The Item objects of this type being published.
+            items: Items participating in the current publish operation or bulk batch.
         """
         setup_or_publish_failed = False
         try:
