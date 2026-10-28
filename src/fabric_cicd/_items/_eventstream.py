@@ -123,7 +123,7 @@ class EventstreamPublisher(ItemPublisher):
                 )
 
     def cleanup(self, items: list[Item]) -> None:  # noqa: ARG002
-        """Attempt all sources and raise a custom error containing every resume failure."""
+        """Attempt to resume all sources and raise a custom error containing every resume failure."""
         paused_sources = self._paused_sources
         self._paused_sources = []
         resume_errors: list[tuple[str, Exception]] = []

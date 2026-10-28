@@ -98,9 +98,6 @@
   queried, paused, or resumed. If a source remains paused after a resume failure, manual recovery
   may be required. Sources are paused and resumed only when updating an existing Eventstream.
   New Eventstreams skip these steps.
-  All paused sources receive a resume attempt. Resume failures are collected in a custom
-  `ItemCleanupError` with source IDs and underlying error details. If publishing
-  already failed, the resume failures are logged without replacing the original error.
 
 ## Graph Model
 
