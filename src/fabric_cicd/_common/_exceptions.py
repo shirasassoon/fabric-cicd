@@ -4,7 +4,6 @@
 """Custom exceptions for the fabric-cicd package."""
 
 from logging import Logger
-from traceback import format_exception
 from typing import Optional
 
 
@@ -68,7 +67,7 @@ class ItemCleanupError(BaseCustomError):
         details = []
         for label, error in errors:
             failures.append(f"{label}: {error}")
-            details.append(f"--- {label} ---\n{''.join(format_exception(type(error), error, error.__traceback__))}")
+            details.append(f"--- {label} ---\n{error!s}")
             additional_info = getattr(error, "additional_info", None)
             if additional_info:
                 details.append(additional_info)

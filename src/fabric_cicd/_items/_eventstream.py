@@ -124,6 +124,9 @@ class EventstreamPublisher(ItemPublisher):
 
     def cleanup_items(self, items: list[Item]) -> None:  # noqa: ARG002
         """Attempt to resume all sources and raise a custom error containing every resume failure."""
+        if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG:
+            return
+
         paused_sources = self._paused_sources
         self._paused_sources = []
         resume_errors: list[tuple[str, Exception]] = []

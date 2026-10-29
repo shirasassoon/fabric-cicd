@@ -25,6 +25,5 @@ def test_item_cleanup_error_preserves_failures_from_different_item_types():
     assert "Failed to complete 2 item cleanup action(s)" in str(error)
     for label, original_error in errors:
         assert f"{label}: {original_error}" in str(error)
-        assert label in error.additional_info
-        assert f"{type(original_error).__name__}: {original_error}" in error.additional_info
+        assert f"--- {label} ---\n{original_error!s}" in error.additional_info
     assert "Resume request details" in error.additional_info

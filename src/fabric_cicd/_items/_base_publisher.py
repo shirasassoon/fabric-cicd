@@ -471,7 +471,7 @@ class ItemPublisher(Publisher):
 
         # Run the publisher's setup before standard publishing and cleanup afterward
         try:
-            with self.publish_lifecycle(list(items.values())):
+            with self._publish_lifecycle(list(items.values())):
                 if config.ordered_items_func is not None:
                     order = config.ordered_items_func(self)
                     errors = self._publish_items_ordered(items, order)
@@ -483,6 +483,8 @@ class ItemPublisher(Publisher):
                 if errors:
                     raise PublishError(errors, logger)
         except PublishError as publish_error:
+            # Standalone setup/cleanup failures bypass this handler to avoid
+            # further deployment actions in post-publish hooks
             try:
                 # Attempt to run post-publish hooks even if publishing failed
                 self.post_publish_all()
@@ -603,7 +605,7 @@ class ItemPublisher(Publisher):
         pass
 
     @contextmanager
-    def publish_lifecycle(self, items: list["Item"]) -> Generator[None, None, None]:
+    def _publish_lifecycle(self, items: list["Item"]) -> Generator[None, None, None]:
         """
         Run setup before publishing the supplied items and cleanup afterward,
         even if setup or publishing fails. Pre/post-publish hooks run separately.
@@ -618,20 +620,18 @@ class ItemPublisher(Publisher):
         Args:
             items: Items participating in the current publish operation or bulk batch.
         """
-        setup_or_publish_failed = False
+        publish_succeeded = False
         try:
             self.setup_items(items)
             yield
-        except BaseException:
-            setup_or_publish_failed = True
-            raise
+            publish_succeeded = True
         finally:
             try:
                 self.cleanup_items(items)
             except Exception as error:
-                # Preserve setup/publishing errors by logging cleanup failures;
-                # otherwise, propagate the cleanup error
-                if not setup_or_publish_failed:
+                # Propagate cleanup errors only if setup and publishing succeeded;
+                # otherwise, log them to preserve the original error
+                if publish_succeeded:
                     raise
                 logger.error("Failed to clean up after item publishing: %s", error)
 
@@ -647,7 +647,7 @@ class ItemPublisher(Publisher):
 
         with ExitStack() as batch_stack:
             for publisher, items in items_by_publisher.items():
-                batch_stack.enter_context(publisher.publish_lifecycle(items))
+                batch_stack.enter_context(publisher._publish_lifecycle(items))
             yield
 
     def post_publish_all_check(self) -> None:
