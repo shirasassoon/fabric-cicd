@@ -102,7 +102,12 @@ class EventstreamPublisher(ItemPublisher):
     _paused_sources: list[tuple[str, dict]]
 
     def setup_items(self, items: list[Item]) -> None:
-        """Pause deployed sources and track successful pauses for this operation."""
+        """Pause deployed sources and track successful pauses for this operation.
+
+        Fail fast on the first setup error to abort publishing and avoid pausing
+        more sources unnecessarily. The lifecycle still runs cleanup to attempt
+        resuming every source successfully paused before the failure.
+        """
         self._paused_sources = []
         if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG:
             return
