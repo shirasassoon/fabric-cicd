@@ -469,7 +469,7 @@ def test_eventstream_cleanup_collects_each_resume_failure(mocker):
     resume = mocker.patch("fabric_cicd._items._eventstream._resume_source", side_effect=[errors[0], None, errors[1]])
 
     with pytest.raises(ItemCleanupError) as raised:
-        publisher.cleanup([_make_item()])
+        publisher.cleanup_items([_make_item()])
 
     assert resume.call_args_list == [mocker.call(workspace, EVENTSTREAM_GUID, source) for source in sources]
     assert isinstance(raised.value, BaseCustomError)
@@ -944,8 +944,8 @@ def test_base_publish_lifecycle_runs_hooks(failure_stage, cleanup_fails, error_t
         if cleanup_fails:
             raise cleanup_error
 
-    setup_hook = mocker.patch.object(publisher, "setup", side_effect=setup)
-    cleanup_hook = mocker.patch.object(publisher, "cleanup", side_effect=cleanup)
+    setup_hook = mocker.patch.object(publisher, "setup_items", side_effect=setup)
+    cleanup_hook = mocker.patch.object(publisher, "cleanup_items", side_effect=cleanup)
 
     def run_publish():
         with publisher.publish_lifecycle(items):

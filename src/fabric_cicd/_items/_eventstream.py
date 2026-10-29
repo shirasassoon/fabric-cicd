@@ -101,7 +101,7 @@ class EventstreamPublisher(ItemPublisher):
     item_type = ItemType.EVENTSTREAM.value
     _paused_sources: list[tuple[str, dict]]
 
-    def setup(self, items: list[Item]) -> None:
+    def setup_items(self, items: list[Item]) -> None:
         """Pause deployed sources and track successful pauses for this operation."""
         self._paused_sources = []
         if FeatureFlag.ENABLE_EVENTSTREAM_SOURCE_PAUSE.value not in constants.FEATURE_FLAG:
@@ -122,7 +122,7 @@ class EventstreamPublisher(ItemPublisher):
                     self.fabric_workspace_obj, item.guid, [source["id"] for source in running_sources]
                 )
 
-    def cleanup(self, items: list[Item]) -> None:  # noqa: ARG002
+    def cleanup_items(self, items: list[Item]) -> None:  # noqa: ARG002
         """Attempt to resume all sources and raise a custom error containing every resume failure."""
         paused_sources = self._paused_sources
         self._paused_sources = []

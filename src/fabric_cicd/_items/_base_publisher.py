@@ -585,14 +585,14 @@ class ItemPublisher(Publisher):
         """
         pass
 
-    def setup(self, items: list["Item"]) -> None:  # noqa: ARG002
+    def setup_items(self, items: list["Item"]) -> None:  # noqa: ARG002
         """
         Hook for running setup actions before a publish operation or bulk batch.
         The default is a no-op.
         """
         pass
 
-    def cleanup(self, items: list["Item"]) -> None:  # noqa: ARG002
+    def cleanup_items(self, items: list["Item"]) -> None:  # noqa: ARG002
         """
         Hook for running cleanup actions after a publish operation or
         bulk batch, even after partial setup failure. The default is a no-op.
@@ -608,7 +608,7 @@ class ItemPublisher(Publisher):
         Run setup before publishing the supplied items and cleanup afterward,
         even if setup or publishing fails. Pre/post-publish hooks run separately.
 
-        Subclasses should override setup() and/or cleanup(), not this method.
+        Subclasses should override setup_items() and/or cleanup_items(), not this method.
         Cleanup errors propagate only if setup and publishing succeeded; otherwise,
         they are logged without replacing the original error.
 
@@ -620,15 +620,17 @@ class ItemPublisher(Publisher):
         """
         setup_or_publish_failed = False
         try:
-            self.setup(items)
+            self.setup_items(items)
             yield
         except BaseException:
             setup_or_publish_failed = True
             raise
         finally:
             try:
-                self.cleanup(items)
+                self.cleanup_items(items)
             except Exception as error:
+                # Preserve setup/publishing errors by logging cleanup failures;
+                # otherwise, propagate the cleanup error
                 if not setup_or_publish_failed:
                     raise
                 logger.error("Failed to clean up after item publishing: %s", error)

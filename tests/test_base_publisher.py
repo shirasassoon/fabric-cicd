@@ -70,7 +70,7 @@ def test_publish_error_names_post_publish_failure_when_both_fail(cleanup_fails, 
     hook_error = _post_publish_failure()
     publisher = _StubPublisher(["LakehouseA"], hook_error)
     if cleanup_fails:
-        mocker.patch.object(publisher, "cleanup", side_effect=RuntimeError("cleanup failed"))
+        mocker.patch.object(publisher, "cleanup_items", side_effect=RuntimeError("cleanup failed"))
 
     with pytest.raises(PublishError) as exc_info:
         publisher.publish_all()
@@ -202,7 +202,7 @@ def test_cleanup_failure_is_reported_without_changing_post_publish_behavior(
     )
     request_log = "URL: https://api.fabric.microsoft.com/resume\nStatus: 403"
     cleanup_error = InvokeError("Resume forbidden", logger, request_log)
-    mocker.patch.object(publisher, "cleanup", side_effect=cleanup_error)
+    mocker.patch.object(publisher, "cleanup_items", side_effect=cleanup_error)
     post_error = _post_publish_failure()
     post_publish = mocker.patch.object(
         publisher, "post_publish_all", side_effect=post_error if post_publish_fails else None
@@ -233,8 +233,8 @@ def test_setup_and_cleanup_failures_preserve_the_setup_error(error_type, mocker)
     publisher = _StubPublisher([], None)
     setup_error = error_type("Setup failed")
     cleanup_error = RuntimeError("Cleanup failed")
-    mocker.patch.object(publisher, "setup", side_effect=setup_error)
-    cleanup = mocker.patch.object(publisher, "cleanup", side_effect=cleanup_error)
+    mocker.patch.object(publisher, "setup_items", side_effect=setup_error)
+    cleanup = mocker.patch.object(publisher, "cleanup_items", side_effect=cleanup_error)
     post_publish = mocker.patch.object(publisher, "post_publish_all")
 
     with pytest.raises(error_type) as raised:
@@ -259,8 +259,10 @@ def test_batch_lifecycle_preserves_primary_error_and_attempts_all_cleanup(operat
         events.append(publisher_name)
         raise error
 
-    mocker.patch.object(first, "cleanup", side_effect=lambda _items: fail_cleanup("first", first_cleanup_error))
-    mocker.patch.object(second, "cleanup", side_effect=lambda _items: fail_cleanup("second", second_cleanup_error))
+    mocker.patch.object(first, "cleanup_items", side_effect=lambda _items: fail_cleanup("first", first_cleanup_error))
+    mocker.patch.object(
+        second, "cleanup_items", side_effect=lambda _items: fail_cleanup("second", second_cleanup_error)
+    )
     item_failure = RuntimeError("Definition rejected")
     operation_error = PublishError([("LakehouseA", item_failure)], logger) if item_errors else item_failure
     batch = [("LakehouseA", MagicMock(), first), ("Stream", MagicMock(), second)]
@@ -293,8 +295,8 @@ def test_single_batch_cleanup_failure_is_unchanged(failing_publisher, mocker):
         if name == failing_publisher:
             raise error
 
-    mocker.patch.object(first, "cleanup", side_effect=lambda _items: cleanup("first"))
-    mocker.patch.object(second, "cleanup", side_effect=lambda _items: cleanup("second"))
+    mocker.patch.object(first, "cleanup_items", side_effect=lambda _items: cleanup("first"))
+    mocker.patch.object(second, "cleanup_items", side_effect=lambda _items: cleanup("second"))
     batch = [("LakehouseA", MagicMock(), first), ("LakehouseB", MagicMock(), second)]
 
     def publish_batch():
@@ -315,9 +317,9 @@ def test_batch_setup_failure_survives_cleanup_failures(mocker, caplog):
     setup_error = RuntimeError("Second setup failed")
     first_cleanup_error = RuntimeError("First cleanup failed")
     second_cleanup_error = RuntimeError("Second cleanup failed")
-    mocker.patch.object(second, "setup", side_effect=setup_error)
-    first_cleanup = mocker.patch.object(first, "cleanup", side_effect=first_cleanup_error)
-    second_cleanup = mocker.patch.object(second, "cleanup", side_effect=second_cleanup_error)
+    mocker.patch.object(second, "setup_items", side_effect=setup_error)
+    first_cleanup = mocker.patch.object(first, "cleanup_items", side_effect=first_cleanup_error)
+    second_cleanup = mocker.patch.object(second, "cleanup_items", side_effect=second_cleanup_error)
     batch = [("LakehouseA", MagicMock(), first), ("Stream", MagicMock(), second)]
     publish = mocker.Mock()
 
