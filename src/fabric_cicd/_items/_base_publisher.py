@@ -469,7 +469,8 @@ class ItemPublisher(Publisher):
 
         config = getattr(self.__class__, "parallel_config", ParallelConfig())
 
-        # Run the publisher's setup before standard publishing and cleanup afterward
+        # The lifecycle runs setup before publishing and cleanup before PublishError
+        # reaches the except PublishError block below
         try:
             with self._publish_lifecycle(list(items.values())):
                 if config.ordered_items_func is not None:
@@ -480,6 +481,7 @@ class ItemPublisher(Publisher):
                 else:
                     errors = self._publish_items_sequential(items)
 
+                # Raise inside the lifecycle so cleanup failures cannot mask publish failures
                 if errors:
                     raise PublishError(errors, logger)
         except PublishError as publish_error:
@@ -492,7 +494,7 @@ class ItemPublisher(Publisher):
                 raise PublishError(publish_error.errors, logger, post_publish_error=post_error) from post_error
             raise
 
-        # Run post-publish hooks after successful publishing
+        # Publishing and lifecycle cleanup both succeeded. Run post-publish hooks
         self.post_publish_all()
 
     def publish_one(self, item_name: str, _item: "Item") -> None:
@@ -623,6 +625,8 @@ class ItemPublisher(Publisher):
         publish_succeeded = False
         try:
             self.setup_items(items)
+            # Run the with-body; errors raised back at yield skip the success flag
+            # and propagate after cleanup in finally, without needing an except
             yield
             publish_succeeded = True
         finally:
